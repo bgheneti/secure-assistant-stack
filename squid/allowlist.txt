@@ -1,0 +1,29 @@
+# -----------------------------------------------------------------------------
+# ALLOWLIST — the human-readable "what the assistant may reach" file.
+# One domain per line. A leading dot matches subdomains too.
+# Everything NOT listed here is DENIED (default-deny) by squid.conf.
+# After editing: `docker compose restart squid`
+# -----------------------------------------------------------------------------
+
+# --- TEE model provider (PrivateMode) — required for the model path ----------
+# These are reached by the privatemode-proxy via CONNECT (no bump = attested).
+api.privatemode.ai
+cdn.confidential.cloud
+
+# --- Google (Gmail + Calendar) — OAuth + API ---------------------------------
+oauth2.googleapis.com
+www.googleapis.com
+gmail.googleapis.com
+.googleapis.com
+
+# --- Amazing Marvin ----------------------------------------------------------
+serv.amazingmarvin.com
+
+# --- Add new tool APIs below as you grow (one per line) ----------------------
+# api.github.com
+# slack.com
+# .openai.com
+
+# --- DEFERRED (uncomment when you add Tinfoil as a fallback model provider) --
+# inference.tinfoil.sh
+# .tinfoil.sh
