@@ -1,0 +1,85 @@
+# =============================================================================
+# Dockerfile.sandbox  ->  assistant-sandbox:1
+# Per-call tool sandbox image for the `unrestricted` tier (runtime.kind=docker).
+# Build INSIDE the dind (host can't reach dind:2375):
+#   docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox
+#
+# BUILD-TIME EGRESS (one-time, supervised — broader than the runtime floor, which
+# is network=none). These hosts must be allowlisted in Squid FOR THE BUILD:
+#   deb.debian.org, security.debian.org        apt (base + ripgrep/jq/git/...)
+#   cli.github.com                             gh apt repo
+#   deb.nodesource.com                         Node.js (NodeSource)
+#   pypi.org, files.pythonhosted.org           uv (via pip)
+#   raw.githubusercontent.com, github.com,
+#     objects.githubusercontent.com            rtk install script + release binary
+#   registry-1.docker.io + docker hub CDN      base image pull
+# After build the image runs fully offline (read_only_rootfs + network=none).
+# =============================================================================
+
+# Python 3.13 already on PATH; Debian bookworm underneath (apt for the rest).
+# PIN BY DIGEST before prod (LESSON #1); tag works for the pilot.
+FROM python:3.13-slim-bookworm
+# hardening: FROM python:3.13-slim-bookworm@sha256:<digest>
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- system toolchain + gh (GitHub CLI) -------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash coreutils ca-certificates curl wget gnupg \
+      jq ripgrep \
+      git openssh-client \
+      build-essential make \
+  # gh via the official apt repo (not in debian):
+  && mkdir -p -m 755 /etc/apt/keyrings \
+  && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       > /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update && apt-get install -y --no-install-recommends gh \
+  && rm -rf /var/lib/apt/lists/*
+
+# --- uv (Python packaging; you prefer 3.13+, base already provides it) -------
+# pip-install keeps image PULLS to a single registry (docker.io); the uv wheel
+# comes from PyPI at build. Alternative (pins a static uv, adds ghcr.io pull):
+#   COPY --from=ghcr.io/astral-sh/uv:<ver> /uv /uvx /usr/local/bin/
+# uv can also MANAGE pythons if you'd rather base off plain debian: `uv python install 3.13`.
+RUN pip install --no-cache-dir uv
+
+# --- Node.js (current LTS) + pnpm (JavaScript dev) --------------------------
+# NodeSource Node (debian's apt node is 18.x / EOL). pnpm via corepack (ships with
+# Node, no separate download). Bump setup_22.x when a newer line goes LTS (VERIFY).
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && corepack enable && corepack prepare pnpm@latest --activate \
+  && rm -rf /var/lib/apt/lists/* \
+  && node --version && pnpm --version
+
+# --- rtk (Rust Token Killer) — saves agent tokens by compressing cmd output --
+# DO NOT `cargo install rtk`: a different crate ("Rust Type Kit") squats that name
+# on crates.io. Use the official installer -> prebuilt binary, no Rust toolchain.
+# Repo: github.com/rtk-ai/rtk
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
+  && for p in "$HOME/.cargo/bin/rtk" "$HOME/.local/bin/rtk" /usr/local/bin/rtk; do \
+       [ -x "$p" ] && cp "$p" /usr/local/bin/rtk 2>/dev/null && break; done \
+  && (rtk --version || echo "VERIFY: rtk not on PATH after install — check install.sh target dir")
+
+# --- writable caches under /workspace (root FS is READ-ONLY at runtime) ------
+# read_only_rootfs=true means ~/.cache and ~/.local aren't writable; point every
+# tool's cache/store at the one writable mount so uv / rtk gain / pnpm / npm don't
+# fail at runtime. (Alternative: have ZeroClaw's runtime mount a tmpfs at /tmp.)
+# pnpm respects XDG_DATA_HOME (store) + XDG_CACHE_HOME; npm needs its own var.
+ENV XDG_CACHE_HOME=/workspace/.cache \
+    XDG_DATA_HOME=/workspace/.local/share \
+    UV_CACHE_DIR=/workspace/.cache/uv \
+    npm_config_cache=/workspace/.cache/npm \
+    PNPM_HOME=/workspace/.local/share/pnpm \
+    PATH=/workspace/.local/share/pnpm:$PATH
+
+WORKDIR /workspace
+
+# Optional: bake the rtk shell hook so `bash -c` rewrites commands automatically.
+# Non-interactive `bash -c` does NOT source ~/.bashrc, so either (a) the agent
+# prefixes `rtk <cmd>` explicitly, or (b) set BASH_ENV to an rtk hook file:
+#   RUN rtk init -g || true
+#   ENV BASH_ENV=/root/.config/rtk/hook.sh   # VERIFY the path rtk init writes

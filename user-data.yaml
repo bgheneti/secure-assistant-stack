@@ -1,0 +1,121 @@
+#cloud-config
+# =============================================================================
+# user-data — provisions ONE Ubuntu 24.04 host running the ENTIRE assistant
+# stack as Docker Compose services (supporting stack + ZeroClaw tiers + DinD).
+#
+# Same file works for: Multipass (Mac dev) AND an Unraid KVM VM (prod) -> parity.
+# Interactive bits (OneCLI vault creds, ZeroClaw onboard, channel pairing) are
+# NOT automated — cloud-init preps everything up to that point.
+#
+# -----------------------------------------------------------------------------
+# LAUNCH ON A MAC WITH MULTIPASS:
+#   multipass launch 24.04 \
+#     --name assistant \
+#     --cpus 4 --memory 8G --disk 40G \
+#     --cloud-init user-data.yaml
+#   multipass shell assistant            # get a shell on the VM
+#   multipass info assistant             # note the IPv4 (for the ssh tunnel below)
+#
+# WHY A VM (vs bare Docker Desktop on the Mac):
+#   * `internal: true` dashboards are reachable on-box (no LinuxKit/vpnkit hop) —
+#     the localhost:10254 refusal disappears; the admin-net hack is unneeded here.
+#   * the 5-A spawn-containment crux behaves like prod (same engine/kernel).
+#   * volumes are native ext4 -> HARD-WON LESSON #2's bind-mount corruption N/A.
+#   * you exercise THIS provisioning path, on Ubuntu 24.04, exactly like Unraid.
+#
+# REACH DASHBOARDS FROM THE MAC (VM dashboards bind VM-loopback):
+#   ssh -L 10254:127.0.0.1:10254 -L 3002:127.0.0.1:3002 assistant@<vm-ipv4>
+#   # then browse http://localhost:10254 (OneCLI) / :3002 (unrestricted) on the Mac
+#
+# DO NOT `multipass mount ~/stack` and run from it — that is the SSHFS/9p trap
+# (LESSON #2). cloud-init clones the repo ONTO the VM's native disk; edit there
+# (or edit on the Mac and git push/pull), never bind-mount the Mac FS as runtime.
+#
+# >>> TEE CHECK: PrivateMode does REMOTE enclave attestation over the network, so
+#     running the proxy inside a (nested) VM should be fine — but VERIFY the TEE
+#     chain still attests from inside Multipass; don't assume.
+#
+# >>> PLACEHOLDER: set STACK_REPO to your git URL containing the assistant-stack
+#     folder (docker-compose.yml + .env.example + squid/ + litellm/ + mcp/ +
+#     onecli/ + Dockerfile.sandbox + scripts/).
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - make
+
+users:
+  - name: assistant
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    # >>> PLACEHOLDER: paste your SSH public key so you can ssh + tunnel from the Mac
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA_REPLACE_WITH_YOUR_PUBLIC_KEY you@mac
+
+write_files:
+  - path: /etc/profile.d/assistant.sh
+    content: |
+      export STACK_DIR=/opt/assistant-stack
+
+  # post-provision helper: brings the stack up + builds the sandbox image.
+  - path: /opt/bring-up.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      : "${STACK_DIR:=/opt/assistant-stack}"
+      cd "$STACK_DIR"
+
+      echo "== 1. .env =="
+      test -f .env || cp .env.example .env
+      grep -q 'REPLACE' .env && \
+        echo "  !! edit $STACK_DIR/.env — secrets still contain REPLACE placeholders" || true
+
+      echo "== 2. Supporting stack (waits for health) =="
+      docker compose up -d --wait \
+        squid onecli-db onecli litellm privatemode-proxy mcp-personal mcp-tasks
+
+      echo "== 3. Agent tiers + contained DinD =="
+      docker compose up -d \
+        dind-unrestricted zeroclaw-updates zeroclaw-tasks zeroclaw-unrestricted
+
+      echo "== 4. Build the tool sandbox INSIDE the dind (host can't reach dind:2375) =="
+      # base-image pull goes via dind's HTTPS_PROXY=squid -> registry must be allowlisted
+      docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox \
+        && docker exec dind-unrestricted docker images | grep assistant-sandbox \
+        || echo "  !! sandbox build failed — check squid allowlist has the registry + Dockerfile digest"
+
+      echo "== NEXT (interactive) =="
+      echo "  * OneCLI dashboard  http://localhost:10254  -> create personal + tasks identities, export CA"
+      echo "  * per tier:  docker exec -it zeroclaw-<tier> zeroclaw doctor   (then onboard)"
+      echo "  * channels:  docker exec -it zeroclaw-updates zeroclaw channel start   (WhatsApp QR)"
+      echo "  * verify:    bash $STACK_DIR/scripts/preflight.sh"
+
+runcmd:
+  # ---- Docker Engine + compose plugin (official convenience script) ----------
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  # ---- fetch the stack -------------------------------------------------------
+  - mkdir -p /opt && chown assistant:assistant /opt
+  # >>> PLACEHOLDER STACK_REPO:
+  - sudo -u assistant git clone https://github.com/PLACEHOLDER/assistant-stack.git /opt/assistant-stack || true
+  # ---- prep .env (secrets still need filling by hand) ------------------------
+  - cd /opt/assistant-stack && test -f .env || sudo -u assistant cp .env.example .env
+  # ---- friendly next-steps banner --------------------------------------------
+  - echo "Edit /opt/assistant-stack/.env (fill secrets), then run /opt/bring-up.sh" > /etc/motd
+
+# After boot:
+#   multipass shell assistant   (or  ssh assistant@<vm-ipv4>)
+#   nano /opt/assistant-stack/.env          # fill the REPLACE_* secrets + model id
+#   bash /opt/bring-up.sh
+# =============================================================================
+# NOTE: no Node, no pnpm, no Claude Code, no NanoClaw host process. ZeroClaw is a
+# container the compose pulls. The old finish-nanoclaw-setup.sh is deleted.
+# =============================================================================
