@@ -1,0 +1,12 @@
+{
+  "catalogs": {
+    "docker-mcp": {
+      "displayName": "Docker MCP Catalog",
+      "url": "https://desktop.docker.com/mcp/catalog/v2/catalog.yaml"
+    },
+    "tasks": {
+      "displayName": "Tasks Catalog",
+      "url": "/root/.docker/mcp/catalogs/catalog.yaml"
+    }
+  }
+}

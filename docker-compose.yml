@@ -168,15 +168,14 @@ services:
     networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 8811)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./mcp/personal:/mcp:ro
+      - ./mcp/personal:/root/.docker/mcp:ro
       - onecli-ca:/certs/onecli:ro
     command:
-      - --catalog=/mcp/catalog.yaml
-      - --registry=/mcp/registry.yaml
-      - --config=/mcp/config.yaml
-      - --secrets=/mcp/secrets.env
-      - --transport=streaming           # VERIFY flag name
-      - --port=8811
+      - --registry=/root/.docker/mcp/registry.yaml
+      - --config=/root/.docker/mcp/config.yaml
+      - --secrets=/root/.docker/mcp/secrets.env
+      - --transport=streaming
+      - --port=8812
       # VERIFY: flag to place SPAWNED server containers on assistant-net, e.g.
       # - --servers-network=assistant-net    (if unsupported -> DinD, see README 5-A)
     ports:
@@ -191,14 +190,13 @@ services:
     networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 8812)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./mcp/tasks:/mcp:ro
+      - ./mcp/tasks:/root/.docker/mcp:ro
       - onecli-ca:/certs/onecli:ro
     command:
-      - --catalog=/mcp/catalog.yaml
-      - --registry=/mcp/registry.yaml
-      - --config=/mcp/config.yaml
-      - --secrets=/mcp/secrets.env
-      - --transport=streaming           # VERIFY flag name
+      - --registry=/root/.docker/mcp/registry.yaml
+      - --config=/root/.docker/mcp/config.yaml
+      - --secrets=/root/.docker/mcp/secrets.env
+      - --transport=streaming
       - --port=8812
       # - --servers-network=assistant-net    (VERIFY / DinD fallback)
     ports:
