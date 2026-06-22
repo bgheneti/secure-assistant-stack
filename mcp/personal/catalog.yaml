@@ -1,0 +1,25 @@
+# ZeroClaw - personal tier MCP catalog
+#
+# Gmail and Google Calendar are intentionally NOT here. Google uses stateful
+# OAuth (refresh token + short-lived ya29 access tokens), which fights an MCP
+# server's own OAuth machinery and resists on-the-wire header injection. Per the
+# chosen design, Google is brokered by OneCLI DIRECTLY (agent-direct / in-agent),
+# outside this gateway. See ../README.md.
+#
+# Marvin is DEFINED here (so it can optionally also be exposed to the personal
+# tier) but NOT enabled - personal/registry.yaml is empty. To enable it, add
+# `marvin: { ref: "" }` to personal/registry.yaml and uncomment its placeholder
+# in personal/secrets.env.
+name: zeroclaw-personal
+displayName: ZeroClaw personal tier
+registry:
+  marvin:
+    title: Amazing Marvin
+    description: Tasks, projects, and time-tracking via Amazing Marvin
+    image: zeroclaw/amazing-marvin-mcp:local
+    type: server
+    longLived: true
+    secrets:
+      - name: marvin_api_key
+        env: AMAZING_MARVIN_API_KEY
+        description: Sent as X-API-Token to serv.amazingmarvin.com. PLACEHOLDER here; OneCLI injects the real token on egress.

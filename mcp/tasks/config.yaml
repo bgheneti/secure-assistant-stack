@@ -1,0 +1,2 @@
+# Non-secret per-server runtime config. Empty mapping = no overrides.
+{}

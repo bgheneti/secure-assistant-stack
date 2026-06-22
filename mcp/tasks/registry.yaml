@@ -1,0 +1,4 @@
+# Enabled servers for the tasks tier (subset of catalog.yaml).
+registry:
+  marvin:
+    ref: ""

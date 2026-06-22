@@ -1,0 +1,32 @@
+# ZeroClaw - tasks tier MCP catalog
+#
+# RULE: only STATIC-token tools live behind the MCP gateway. Non-static auth
+# (Google OAuth, AWS SigV4, anything connection-bound) is brokered by OneCLI
+# DIRECTLY and is intentionally absent here. See ../README.md.
+#
+# Credential model: the value in secrets.env is a PLACEHOLDER. The server sends
+# it as the X-API-Token header; OneCLI swaps in the real token on egress, so the
+# server container never holds a raw credential.
+name: zeroclaw-tasks
+displayName: ZeroClaw tasks tier
+registry:
+  marvin:
+    title: Amazing Marvin
+    description: Tasks, projects, and time-tracking via Amazing Marvin
+    image: zeroclaw/amazing-marvin-mcp:local   # build from bgheneti/Amazing-Marvin-MCP (see ../README.md)
+    type: server
+    longLived: true
+    secrets:
+      - name: marvin_api_key
+        env: AMAZING_MARVIN_API_KEY            # exact env var the server reads
+        description: Sent as X-API-Token to serv.amazingmarvin.com. PLACEHOLDER here; OneCLI injects the real token on egress.
+  # --- add more task-oriented static-token tools below, then enable in registry.yaml ---
+  # github:
+  #   title: GitHub
+  #   description: Issues, PRs, repositories
+  #   image: mcp/github          # VERIFY against the Docker MCP catalog
+  #   type: server
+  #   secrets:
+  #     - name: github_token
+  #       env: GITHUB_PERSONAL_ACCESS_TOKEN
+  #       description: PLACEHOLDER; OneCLI injects the real bearer on egress to api.github.com
