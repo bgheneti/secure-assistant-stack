@@ -1,0 +1,50 @@
+# Pre-seeds a working default agent pointing at LiteLLM on assistant-net.
+# Injected by the entrypoint wrapper (zeroclaw/entrypoint.sh) into
+# /data/.zeroclaw/config.toml if no config exists yet.
+# ---
+# ZEROCLAW_PROVIDER_API_KEY env var (= LITELLM_VIRTUAL_KEY / LITELLM_MASTER_KEY)
+# is injected at runtime; this file contains no secrets.
+
+# ── Provider ───────────────────────────────────────────────────────────────────
+[providers.models.litellm]
+kind      = "openai-compatible"
+base_url  = "http://litellm:4000/v1"
+model     = "assistant"   # matches model_name in litellm/config.yaml
+api_key   = "${ZEROCLAW_PROVIDER_API_KEY}"   # resolved from env at startup
+
+# ── Default agent ──────────────────────────────────────────────────────────────
+[agents.assistant]
+provider = "litellm"
+model    = "assistant"
+system_prompt = "You are a helpful personal assistant."
+temperature   = 0.7
+max_depth     = 3
+
+# ── Security (conservative defaults) ──────────────────────────────────────────
+[autonomy]
+level          = "supervised"
+workspace_only = true
+forbidden_paths = ["/etc", "/sys", "/proc", "/boot"]
+allowed_commands = []
+
+[secrets]
+encrypt = true
+
+# ── Gateway ────────────────────────────────────────────────────────────────────
+[gateway]
+port               = 3000
+host               = "0.0.0.0"   # compose publishes 127.0.0.1:30XX:3000
+require_pairing    = true
+allow_public_bind  = false
+pair_rate_limit_per_minute    = 10
+webhook_rate_limit_per_minute = 60
+
+# ── Memory ─────────────────────────────────────────────────────────────────────
+[memory]
+backend    = "sqlite"
+auto_save  = true
+embedding_provider = "none"   # no embedding calls until you configure one
+
+# ── Observability ──────────────────────────────────────────────────────────────
+[observability]
+backend = "noop"

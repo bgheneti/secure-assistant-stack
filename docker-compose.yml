@@ -61,9 +61,6 @@ volumes:
   onecli-ca:
   privatemode-data:
   # per-tier ZeroClaw state: config.toml + memory.db (SQLite+vectors) + skills + logs
-  zeroclaw-updates-data:
-  zeroclaw-tasks-data:
-  zeroclaw-unrestricted-data:
   zeroclaw-unrestricted-workspace:   # durable /workspace shared by agent + its tool containers
   dind-unrestricted-data:        # inner Docker graph for the unrestricted tool runtime
 
@@ -230,14 +227,16 @@ services:
     environment:
       # secrets only; everything else in config.toml. VERIFY exact env-override keys
       # against `zeroclaw doctor` (the wiki confirms env overrides config.toml).
+      ZEROCLAW_MODEL: "assistant"
       ZEROCLAW_PROVIDER_API_KEY: ${LITELLM_VIRTUAL_KEY}   # VERIFY key name
       HTTP_PROXY:  http://squid:3128
       HTTPS_PROXY: http://squid:3128
       NO_PROXY: litellm,mcp-personal,localhost,127.0.0.1
     volumes:
-      - zeroclaw-updates-data:/data
+      - ./zeroclaw/updates:/root/.zeroclaw
+      - ./zeroclaw/config.template.toml:/etc/zeroclaw/config.template.toml:ro
     ports:
-      - "127.0.0.1:3000:42617"            # gateway dashboard (pairing-authed) — localhost only
+      - "127.0.0.1:3000:3000"            # gateway dashboard (pairing-authed) — localhost only
 
   # -------------------------------------------------- zeroclaw-tasks (TIER 2) -
   # Signal front end. Tools = Marvin, brokered via mcp-tasks + OneCLI.
@@ -248,14 +247,16 @@ services:
     depends_on: [litellm, onecli, mcp-tasks, squid]
     networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 3001)
     environment:
+      ZEROCLAW_MODEL: "assistant"
       ZEROCLAW_PROVIDER_API_KEY: ${LITELLM_VIRTUAL_KEY}   # VERIFY key name
       HTTP_PROXY:  http://squid:3128
       HTTPS_PROXY: http://squid:3128
       NO_PROXY: litellm,mcp-tasks,localhost,127.0.0.1
     volumes:
-      - zeroclaw-tasks-data:/data
+      - ./zeroclaw/tasks:/root/.zeroclaw
+      - ./zeroclaw/config.template.toml:/etc/zeroclaw/config.template.toml:ro
     ports:
-      - "127.0.0.1:3001:42617"
+      - "127.0.0.1:3001:3000"
 
   # --------------------------------------------- zeroclaw-unrestricted (TIER) -
   # No channel (CLI/dashboard only). Local power tools: shell/file/browser/http/git.
@@ -264,6 +265,7 @@ services:
   # tools (browser/http/git-https) route out via dind -> Squid. Files persist via the
   # shared /workspace volume (containers are disposable; the workspace is not).
   # Sandbox image is the custom assistant-sandbox:1 (built INTO the dind — see PROJECT-STATE).
+
   zeroclaw-unrestricted:
     image: ghcr.io/zeroclaw-labs/zeroclaw:v0.8.1-debian@sha256:9d6f99bfc1d0adfe77d6302f52dd2a32969fbe04067f3e9ce560776d1efeabb9
     container_name: zeroclaw-unrestricted
@@ -271,6 +273,7 @@ services:
     depends_on: [litellm, dind-unrestricted, squid]
     networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 3002)
     environment:
+      ZEROCLAW_MODEL: "assistant"
       ZEROCLAW_PROVIDER_API_KEY: ${LITELLM_VIRTUAL_KEY}   # VERIFY key name
       # point ZeroClaw's docker runtime at the CONTAINED daemon, NOT the host socket
       DOCKER_HOST: tcp://dind-unrestricted:2375            # VERIFY ZeroClaw honors DOCKER_HOST
@@ -278,12 +281,13 @@ services:
       HTTPS_PROXY: http://squid:3128
       NO_PROXY: litellm,dind-unrestricted,localhost,127.0.0.1
     volumes:
-      - zeroclaw-unrestricted-data:/data
+      - ./zeroclaw/unrestricted:/root/.zeroclaw
       # SAME named volume + SAME path as dind below, so mount_workspace binds resolve
       # against the dind daemon's FS and agent + tool containers share one workspace.
       - zeroclaw-unrestricted-workspace:/workspace
+      - ./zeroclaw/config.template.toml:/etc/zeroclaw/config.template.toml:ro
     ports:
-      - "127.0.0.1:3002:42617"
+      - "127.0.0.1:3002:3000"
 
   # ------------------------------------------------------- dind-unrestricted -
   # Contained Docker daemon for the unrestricted tier's tool runtime. It is on

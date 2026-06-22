@@ -1,42 +1,24 @@
 # =============================================================================
 # LiteLLM — local model gateway in front of the PrivateMode TEE proxy.
 # Privacy-first: prompt logging OFF, no external callbacks.
-# The agent talks to LiteLLM with a *virtual key*; LiteLLM talks to PrivateMode.
+# The agent talks to LiteLLM; LiteLLM talks to PrivateMode.
 # =============================================================================
 
 model_list:
-  - model_name: assistant-model            # <- the name the agent requests
+  - model_name: assistant
     litellm_params:
-      # >>> PLACEHOLDER <<< replace with your exact PrivateMode model id
-      # (find it in your PrivateMode dashboard / model overview, e.g.
-      #  "ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4" or similar)
-      model: openai/PLACEHOLDER_PRIVATEMODE_MODEL
+      model: openai/gpt-oss-120b   # e.g. openai/privatemode-llama-3-1-70b
       api_base: http://privatemode-proxy:8080/v1
-      # The PrivateMode API key lives on the privatemode-proxy container, NOT here.
-      # The local proxy endpoint is on the internal net; a dummy key is fine:
-      api_key: "sk-noop-local-privatemode"
+      api_key: os.environ/PRIVATEMODE_API_KEY
+  - model_name: thinker
+    litellm_params:
+      model: moonshotai/kimi-k2.6   # e.g. openai/privatemode-llama-3-1-70b
+      api_base: http://privatemode-proxy:8080/v1
+      api_key: os.environ/PRIVATEMODE_API_KEY
 
 litellm_settings:
-  turn_off_message_logging: true           # do not log prompts/responses
-  success_callback: []                     # no external telemetry
-  failure_callback: []
-  drop_params: true                        # tolerate provider param differences
+  turn_off_message_logging: true   # no prompt/response content in logs (privacy)
+  telemetry: false                  # no call-home to LiteLLM
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  # Create a scoped virtual key (with a monthly budget + RPM cap) after first boot:
-  #   curl -X POST http://localhost:4000/key/generate \
-  #     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  #     -H "Content-Type: application/json" \
-  #     -d '{"models":["assistant-model"],"max_budget":20,"budget_duration":"30d","rpm_limit":60}'
-  # Put the returned sk-... into the agent as ANTHROPIC_AUTH_TOKEN.
-
-# -----------------------------------------------------------------------------
-# VERIFY at 4-B:
-#  - PrivateMode exposes an OpenAI-compatible path at /v1 (documented). If you
-#    prefer its Anthropic-compatible path, NanoClaw/Claude SDK speak Anthropic
-#    natively, but routing Anthropic->OpenAI->PrivateMode via LiteLLM is the
-#    most documented path. Start with OpenAI here.
-#  - Confirm a completion returns AND privatemode-proxy logs a successful
-#    attestation, AND squid shows a CONNECT to api.privatemode.ai with no bump.
-# =============================================================================
