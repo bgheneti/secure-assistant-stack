@@ -12,12 +12,12 @@ model_list:
       api_key: os.environ/PRIVATEMODE_API_KEY
   - model_name: thinker
     litellm_params:
-      model: moonshotai/kimi-k2.6   # e.g. openai/privatemode-llama-3-1-70b
+      model: litellm_proxy/kimi-latest   # e.g. openai/privatemode-llama-3-1-70b
       api_base: http://privatemode-proxy:8080/v1
       api_key: os.environ/PRIVATEMODE_API_KEY
 
 litellm_settings:
-  turn_off_message_logging: true   # no prompt/response content in logs (privacy)
+  turn_off_message_logging: false   # no prompt/response content in logs (privacy)
   telemetry: false                  # no call-home to LiteLLM
 
 general_settings:

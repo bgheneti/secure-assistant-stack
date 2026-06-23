@@ -92,6 +92,11 @@ write_files:
       echo "== 3. Agent tiers + contained DinD =="
       docker compose up -d \
         dind-unrestricted zeroclaw-updates zeroclaw-tasks zeroclaw-unrestricted
+        for t in updates tasks unrestricted; do
+          sed "s|LITELLM_MASTER_KEY|$LITELLM_MASTER_KEY|g" zeroclaw/$t/config.toml > /tmp/conf-$t.toml
+          docker cp /tmp/conf-$t.toml "zeroclaw-$t:/zeroclaw-data/.zeroclaw/config.toml"
+        done
+        docker compose restart zeroclaw-*
 
       echo "== 4. Build the tool sandbox INSIDE the dind (host can't reach dind:2375) =="
       # base-image pull goes via dind's HTTPS_PROXY=squid -> registry must be allowlisted
@@ -116,7 +121,6 @@ runcmd:
   #      over multipass's channel after boot (so secrets never enter cloud-init) ----
   - cd /opt/assistant-stack && test -f .env || sudo -u assistant cp .env.example .env
   - sudo -u assistant chown -R 65534:65534 /opt/assistant-stack/zeroclaw
-  - sudo -u assistant chmod -R /opt/assistant-stack/zeroclaw/*/config.toml
   # ---- friendly next-steps banner --------------------------------------------
   - echo "Run /opt/bring-up.sh  (launch-multipass.sh transfers your real .env in after boot)" > /etc/motd
 

@@ -1,33 +1,49 @@
-# Pre-seeds a working default agent pointing at LiteLLM on assistant-net.
-# Injected by the entrypoint wrapper (zeroclaw/entrypoint.sh) into
-# /data/.zeroclaw/config.toml if no config exists yet.
-# ---
-# ZEROCLAW_PROVIDER_API_KEY env var (= LITELLM_VIRTUAL_KEY / LITELLM_MASTER_KEY)
-# is injected at runtime; this file contains no secrets.
+[gateway]
+port = 42617
+host = "[::]"
+allow_public_bind = true
+allow_remote_admin = true
 
-[agents.assistant]
-provider = "litellm"
-model = "assistant"
-system_prompt = "You are a helpful personal assistant."
-temperature = 0.7
-max_depth = 3
-
-[autonomy]
-level = "supervised"
-workspace_only = true
-forbidden_paths = ["/etc", "/sys", "/proc", "/boot"]
+[risk_profiles.default]
 allowed_commands = []
+auto_approve = ["memory_recall", "calculator", "glob_search", "content_search", "image_info", "weather", "tool_search"]
+block_high_risk_commands = true
+forbidden_paths = ["/etc", "/root", "/home", "/usr", "/bin", "/sbin", "/lib", "/opt", "/boot", "/dev", "/proc", "/sys", "/var", "/tmp", "~/.ssh", "~/.gnupg", "~/.aws", "~/.config"]
+level = "supervised"
+require_approval_for_medium_risk = true
+workspace_only = true
 
-[secrets]
-encrypt = true
+[agents.default]
+delegate_same_risk_profile = true
+enabled = true
+model_provider = "litellm.assistant"
+risk_profile = "default"
+runtime_profile = "default"
 
-[memory]
+[agents.default.identity]
+format = "openclaw"
+
+[providers]
+
+[agents.default.memory]
 backend = "sqlite"
-auto_save = true
-embedding_provider = "none"
+
+[providers.models]
+
+[agents.default.workspace]
+unrestricted_filesystem = false
 
 [providers.models.litellm]
-kind = "openai-compatible"
-base_url = "http://litellm:4000/v1"
+
+[providers.models.litellm.assistant]
+uri = "http://litellm:4000"
 model = "assistant"
-api_key = "${ZEROCLAW_PROVIDER_API_KEY}" # resolved from env at startup
+think = true
+api_key = "LITELLM_MASTER_KEY"
+
+[providers.models.litellm.thinker]
+uri = "http://litellm:4000"
+model = "thinker"
+api_key = "LITELLM_MASTER_KEY"
+
+[agents]
