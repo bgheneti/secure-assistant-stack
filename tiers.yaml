@@ -1,0 +1,138 @@
+# =============================================================================
+# tiers.yaml — defines ZeroClaw agent tiers and their infrastructure.
+#
+# The default below matches the original 3-tier setup (updates + tasks +
+# unrestricted). Edit to add/remove tiers, change ports, identities, or
+# sandbox behavior, then re-run:
+#
+#     scripts/generate-tiers.py
+#     docker compose -f docker-compose.yml -f docker-compose.tiers.yml up -d
+#
+# Each tier creates:
+#   - A ZeroClaw container (zeroclaw-<name>)
+#   - Optionally an MCP gateway (mcp-<name>) if mcp: true
+#   - Optionally a contained DinD (dind-<name>) if runtime: docker
+#   - Named volumes for data, workspace (docker runtime only)
+# =============================================================================
+
+# Defaults applied to every tier unless overridden per-tier.
+defaults:
+  image: ghcr.io/zeroclaw-labs/zeroclaw:v0.8.1-debian@sha256:9d6f99bfc1d0adfe77d6302f52dd2a32969fbe04067f3e9ce560776d1efeabb9
+
+# ---------------------------------------------------------------------------
+# TIER DEFINITIONS
+# ---------------------------------------------------------------------------
+# Fields per tier:
+#   name         (required)  — container/service name stem (zeroclaw-<name>)
+#   identity     (optional)  — OneCLI identity name (null for no identity)
+#   port         (required)  — host port for the ZeroClaw dashboard
+#   runtime      (optional)  — "native" (default) or "docker" (DinD sandbox)
+#   mcp          (optional)  — true/false, enable MCP gateway for this tier
+#   mcp_port     (optional)  — host port for the MCP gateway dashboard
+#   mcp_dir      (optional)  — path to MCP gateway config dir (default: mcp/<name>)
+#   mcp_token_var(optional)  — .env var holding the MCP gateway bearer token
+#   no_proxy     (optional)  — NO_PROXY value for the tier
+#   commands     (optional)  — allowed local shell commands ([] = none, all via MCP)
+#   auto_approve (optional)  — commands that skip human approval
+#   workspace_unrestricted   — allow full filesystem access (default: false)
+#   block_high_risk          — block high-risk commands (default: true)
+#   build_sandbox (optional) — build the assistant-sandbox image in this tier's DinD
+# ---------------------------------------------------------------------------
+tiers:
+
+  # ----- WhatsApp/updates tier -----------------------------------------------
+  # Identity-bearing tier. Uses OneCLI MITM proxy for Gmail/GCal credential
+  # injection. No local tool execution — all tools via MCP.
+  - name: updates
+    identity: personal
+    port: 3000
+    runtime: native
+    mcp: true
+    mcp_port: 8811
+    mcp_dir: mcp/personal
+    mcp_token_var: MCP_PERSONAL_TOKEN
+    no_proxy: litellm,mcp-updates,localhost,127.0.0.1
+    commands: []
+    auto_approve:
+      - memory_recall
+      - calculator
+      - glob_search
+      - content_search
+      - image_info
+      - weather
+      - tool_search
+
+  # ----- Signal/tasks tier ---------------------------------------------------
+  # Identity-bearing tier. Uses OneCLI MITM proxy for Amazing Marvin credential
+  # injection. No local tool execution — all tools via MCP.
+  - name: tasks
+    identity: tasks
+    port: 3001
+    runtime: native
+    mcp: true
+    mcp_port: 8812
+    mcp_dir: mcp/tasks
+    mcp_token_var: MCP_TASKS_TOKEN
+    no_proxy: litellm,mcp-tasks,localhost,127.0.0.1
+    commands: []
+    auto_approve:
+      - memory_recall
+      - calculator
+      - glob_search
+      - content_search
+      - image_info
+      - weather
+      - tool_search
+
+  # ----- Unrestricted/sandbox tier -------------------------------------------
+  # No OneCLI identity (no external SaaS). Runs local tools in a contained DinD
+  # sandbox. Egress via Squid (allowlisted). Full workspace access.
+  - name: unrestricted
+    identity: null
+    port: 3002
+    runtime: docker
+    mcp: false
+    no_proxy: litellm,dind-unrestricted,localhost,127.0.0.1
+    workspace_unrestricted: true
+    block_high_risk: false
+    build_sandbox: true
+    commands:
+      - cat
+      - ls
+      - head
+      - tail
+      - echo
+      - pwd
+      - date
+      - env
+      - which
+      - uname
+      - whoami
+      - id
+      - cd
+      - mkdir
+      - cp
+      - mv
+      - rm
+      - chmod
+      - chown
+      - find
+      - grep
+      - sort
+      - wc
+      - diff
+      - tee
+    auto_approve:
+      - memory_recall
+      - calculator
+      - glob_search
+      - content_search
+      - image_info
+      - weather
+      - tool_search
+      - bash
+      - read
+      - write
+      - edit
+      - glob
+      - grep

@@ -20,6 +20,7 @@ serv.amazingmarvin.com
 # api.github.com
 # slack.com
 # .openai.com
+cgr.dev
 
 # --- DEFERRED (uncomment when you add Tinfoil as a fallback model provider) --
 # inference.tinfoil.sh

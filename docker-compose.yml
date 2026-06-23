@@ -1,39 +1,19 @@
 # =============================================================================
-# Assistant stack — Option B (ZeroClaw, per-TIER agent containers)  [LOCAL TEST]
+# Assistant stack — supporting services
 #
-#   model path : zeroclaw -> litellm -> privatemode-proxy -> [enclave]   (NO MITM)
-#   tool  path : zeroclaw -> mcp gateway -> onecli (injects creds) -> squid -> API
-#   local tools: zeroclaw(unrestricted) -> contained DinD -> assistant-net only
+# This file defines the SHARED infrastructure: Squid (allowlisted egress),
+# OneCLI (vault + MITM proxy + dashboard), OneCLI DB, LiteLLM (model routing),
+# and PrivateMode Proxy (TEE enclave). It contains ZERO agent-tier definitions.
 #
-# WHAT CHANGED vs Option A'' (NanoClaw):
-#   * NanoClaw was a HOST PROCESS that spawned a container per chat group, with
-#     channels merged into the fork as Claude Code skills. GONE. ZeroClaw is a
-#     real GHCR image (ghcr.io/zeroclaw-labs/zeroclaw) -> a first-class Compose
-#     service. No Node/pnpm, no container-runner.patch.md, no fork merges.
-#   * Channels are NATIVE (WhatsApp web-mode, Signal via signal-cli) and bound
-#     with `zeroclaw channel ...`; binding persists in the tier's data volume.
-#   * Per-tier isolation = ONE ZeroClaw container PER TIER (hard boundary), each
-#     with its own config.toml, data volume, OneCLI identity, channel, MCP tier.
-#   * Model provider is OpenAI-compatible -> LiteLLM /v1 (NOT ANTHROPIC_BASE_URL).
-#     No Anthropic provider is configured anywhere. observability = "noop".
+# Agent tiers (ZeroClaw containers + MCP gateways + optional DinD sandboxes)
+# are defined in tiers.yaml and GENERATED into docker-compose.tiers.yml:
 #
-# TIERS:
-#   updates       WhatsApp(web)  Gmail/GCal via mcp-personal   OneCLI: personal
-#   tasks         Signal         Marvin    via mcp-tasks        OneCLI: tasks
-#   unrestricted  (no channel)   local shell/file/browser/http/git, Docker-sandboxed
+#     scripts/generate-tiers.py
+#     docker compose -f docker-compose.yml -f docker-compose.tiers.yml up -d
 #
 # Networks:
 #   assistant-net  internal: true  (NO direct internet — fail-closed floor)
 #   egress-net     bridged, internet — ONLY squid is attached -> sole way out
-#
-# >>> CRUX 1 (VERIFY 5-A): the MCP gateways spawn server CONTAINERS via the Docker
-#     socket. They MUST land on assistant-net (no internet) + carry tier proxy/CA/
-#     token. Prove with `--dry-run --verbose`. DinD fallback in README.
-# >>> CRUX 2 (NEW, decision 4): the `unrestricted` tier runs tools under
-#     runtime.kind=docker against a CONTAINED DinD (dind-unrestricted). The DinD
-#     itself is on assistant-net (no direct internet) and pulls images THROUGH
-#     Squid; every tool container it spawns inherits "internal-only" egress.
-#     Same 5-A reasoning, applied to the agent's own tools.
 # =============================================================================
 
 networks:
@@ -60,12 +40,11 @@ volumes:
   onecli-db:
   onecli-ca:
   privatemode-data:
-  # per-tier ZeroClaw state: config.toml + memory.db (SQLite+vectors) + skills + logs
-  zeroclaw-updates-data:
-  zeroclaw-tasks-data:
-  zeroclaw-unrestricted-data:
-  zeroclaw-unrestricted-workspace:   # durable /workspace shared by agent + its tool containers
-  dind-unrestricted-data:        # inner Docker graph for the unrestricted tool runtime
+
+  # =========================================================================
+  # Agent-tier volumes (zeroclaw-*-data, *-workspace, dind-*-data) are
+  # defined in docker-compose.tiers.yml (generated from tiers.yaml).
+  # =========================================================================
 
 services:
 
@@ -128,6 +107,12 @@ services:
       - onecli-ca:/data/ca                 # VERIFY CA path; export CA here
     ports:
       - "127.0.0.1:10254:10254"            # dashboard — localhost only
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 10255 && wget -qO- http://localhost:10254/api/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # -------------------------------------------------------- privatemode-proxy -
   privatemode-proxy:
@@ -158,171 +143,7 @@ services:
       - ./litellm/config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
 
-  # ----------------------------------------------------- mcp-personal (TIER 1) -
-  # Sensitive tier: Gmail + Google Calendar. Own OneCLI identity (personal token).
-  mcp-personal:
-    image: docker/mcp-gateway:latest       # VERIFY/pin by digest
-    container_name: mcp-personal
-    restart: unless-stopped
-    depends_on: [onecli]
-    networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 8811)
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./mcp/personal:/root/.docker/mcp:ro
-      - onecli-ca:/certs/onecli:ro
-    command:
-      - --registry=/root/.docker/mcp/registry.yaml
-      - --config=/root/.docker/mcp/config.yaml
-      - --secrets=/root/.docker/mcp/secrets.env
-      - --transport=streaming
-      - --port=8811
-      # VERIFY: flag to place SPAWNED server containers on assistant-net, e.g.
-      # - --servers-network=assistant-net    (if unsupported -> DinD, see README 5-A)
-    ports:
-      - "127.0.0.1:8811:8811"
-
-  # -------------------------------------------------------- mcp-tasks (TIER 2) -
-  mcp-tasks:
-    image: docker/mcp-gateway:latest       # VERIFY/pin by digest
-    container_name: mcp-tasks
-    restart: unless-stopped
-    depends_on: [onecli]
-    networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 8812)
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./mcp/tasks:/root/.docker/mcp:ro
-      - onecli-ca:/certs/onecli:ro
-    command:
-      - --registry=/root/.docker/mcp/registry.yaml
-      - --config=/root/.docker/mcp/config.yaml
-      - --secrets=/root/.docker/mcp/secrets.env
-      - --transport=streaming
-      - --port=8812
-      # - --servers-network=assistant-net    (VERIFY / DinD fallback)
-    ports:
-      - "127.0.0.1:8812:8812"
-
   # =========================================================================
-  # AGENT TIERS — ZeroClaw (replaces the old host-process NanoClaw block)
-  #
-  # config.toml lives in each tier's named volume (NOT a host bind — keeps state
-  # on native Docker storage per HARD-WON LESSON #2, and channel bindings written
-  # by `zeroclaw channel ...` persist there). Populate it once via:
-  #     docker exec -it zeroclaw-<tier> zeroclaw onboard
-  #   or by dropping a pre-written config.toml into the volume. Reference configs
-  #   are in PROJECT-STATE.md ("ZeroClaw config.toml templates").
-  #
-  # Each tier reaches litellm + its mcp gateway BY SERVICE NAME on assistant-net
-  # (internal, no proxy on those hops -> attestation preserved). Any *direct* tool
-  # egress from the ZeroClaw process is still forced through Squid via HTTPS_PROXY.
-  # =========================================================================
-
-  # ----------------------------------------------- zeroclaw-updates (TIER 1) -
-  # WhatsApp(web) front end. Tools = Gmail/GCal, brokered via mcp-personal+OneCLI.
-  # runtime.kind=native here (its real tools are remote MCP; little local code to
-  # sandbox). For decision-4 parity, give it a dind-* sidecar like 'unrestricted'.
-  zeroclaw-updates:
-    image: ghcr.io/zeroclaw-labs/zeroclaw:v0.8.1-debian@sha256:9d6f99bfc1d0adfe77d6302f52dd2a32969fbe04067f3e9ce560776d1efeabb9
-    container_name: zeroclaw-updates
-    restart: unless-stopped
-    depends_on: [litellm, onecli, mcp-personal, squid]
-    networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 3000)
-    environment:
-      # secrets only; everything else in config.toml. VERIFY exact env-override keys
-      # against `zeroclaw doctor` (the wiki confirms env overrides config.toml).
-      ZEROCLAW_MODEL: "assistant"
-      ZEROCLAW_providers__models__litellm__assistant__api_key: ${LITELLM_MASTER_KEY}
-      ZEROCLAW_providers__models__litellm__thinker__api_key: ${LITELLM_MASTER_KEY}
-      HTTP_PROXY:  http://squid:3128
-      HTTPS_PROXY: http://squid:3128
-      NO_PROXY: litellm,mcp-personal,localhost,127.0.0.1
-    volumes:
-      - zeroclaw-updates-data:/zeroclaw-data
-    ports:
-      - "127.0.0.1:3000:42617"            # gateway dashboard (pairing-authed) — localhost only
-
-  # -------------------------------------------------- zeroclaw-tasks (TIER 2) -
-  # Signal front end. Tools = Marvin, brokered via mcp-tasks + OneCLI.
-  zeroclaw-tasks:
-    image: ghcr.io/zeroclaw-labs/zeroclaw:v0.8.1-debian@sha256:9d6f99bfc1d0adfe77d6302f52dd2a32969fbe04067f3e9ce560776d1efeabb9
-    container_name: zeroclaw-tasks
-    restart: unless-stopped
-    depends_on: [litellm, onecli, mcp-tasks, squid]
-    networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 3001)
-    environment:
-      ZEROCLAW_MODEL: "assistant"
-      ZEROCLAW_providers__models__litellm__assistant__api_key: ${LITELLM_MASTER_KEY}
-      ZEROCLAW_providers__models__litellm__thinker__api_key: ${LITELLM_MASTER_KEY}
-      HTTP_PROXY:  http://squid:3128
-      HTTPS_PROXY: http://squid:3128
-      NO_PROXY: litellm,mcp-tasks,localhost,127.0.0.1
-    volumes:
-      - zeroclaw-tasks-data:/zeroclaw-data
-    ports:
-      - "127.0.0.1:3001:42617"
-
-  # --------------------------------------------- zeroclaw-unrestricted (TIER) -
-  # No channel (CLI/dashboard only). Local power tools: shell/file/browser/http/git.
-  # runtime.kind=docker -> spawns a FRESH tool container PER CALL on the contained dind.
-  # Tool containers default to network="none" (shell/file need none); only networked
-  # tools (browser/http/git-https) route out via dind -> Squid. Files persist via the
-  # shared /workspace volume (containers are disposable; the workspace is not).
-  # Sandbox image is the custom assistant-sandbox:1 (built INTO the dind — see PROJECT-STATE).
-
-  zeroclaw-unrestricted:
-    image: ghcr.io/zeroclaw-labs/zeroclaw:v0.8.1-debian@sha256:9d6f99bfc1d0adfe77d6302f52dd2a32969fbe04067f3e9ce560776d1efeabb9
-    container_name: zeroclaw-unrestricted
-    restart: unless-stopped
-    depends_on: [litellm, dind-unrestricted, squid]
-    networks: [assistant-net, admin-net]   # admin-net = DEV ONLY (dashboard 3002)
-    environment:
-      ZEROCLAW_MODEL: "assistant"
-      ZEROCLAW_providers__models__litellm__assistant__api_key: ${LITELLM_MASTER_KEY}
-      ZEROCLAW_providers__models__litellm__thinker__api_key: ${LITELLM_MASTER_KEY}
-      # point ZeroClaw's docker runtime at the CONTAINED daemon, NOT the host socket
-      DOCKER_HOST: tcp://dind-unrestricted:2375            # VERIFY ZeroClaw honors DOCKER_HOST
-      HTTP_PROXY:  http://squid:3128
-      HTTPS_PROXY: http://squid:3128
-      NO_PROXY: litellm,dind-unrestricted,localhost,127.0.0.1
-    volumes:
-      - zeroclaw-unrestricted-data:/zeroclaw-data
-      # SAME named volume + SAME path as dind below, so mount_workspace binds resolve
-      # against the dind daemon's FS and agent + tool containers share one workspace.
-      - zeroclaw-unrestricted-workspace:/workspace
-    ports:
-      - "127.0.0.1:3002:42617"
-
-  # ------------------------------------------------------- dind-unrestricted -
-  # Contained Docker daemon for the unrestricted tier's tool runtime. It is on
-  # assistant-net (internal: true) so it has NO direct internet; image pulls go
-  # THROUGH Squid (allowlist the registry). Every tool container it spawns has no
-  # proxy -> no internet. This is the agent-tools analogue of the README DinD floor.
-  #
-  # >>> HARDENING TODO (pilot caveat): 2375 is unauthenticated on assistant-net,
-  #     so any container on that net can drive this daemon (contained: no host,
-  #     no internet, but lateral). Before prod: TLS (2376) or move this pair to a
-  #     dedicated network and keep only litellm reachable cross-net. Tracked in
-  #     PROJECT-STATE "What's PENDING".
-  dind-unrestricted:
-    image: docker:27-dind                  # VERIFY/pin by digest
-    container_name: dind-unrestricted
-    restart: unless-stopped
-    privileged: true                       # required by DinD; contained (no host socket)
-    depends_on: [squid]
-    networks: [assistant-net]
-    command: ["--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375", "--tls=false"]   # VERIFY flags; TLS = hardening. unix socket kept so in-container `docker build` works.
-    environment:
-      HTTP_PROXY:  http://squid:3128       # image pulls via allowlist only
-      HTTPS_PROXY: http://squid:3128
-      NO_PROXY: localhost,127.0.0.1
-      DOCKER_TLS_CERTDIR: ""               # disable auto-TLS for the 2375 pilot path
-    volumes:
-      - dind-unrestricted-data:/var/lib/docker
-      # workspace mounted here too (same path) so ZeroClaw's mount_workspace -v binds
-      # resolve against THIS daemon's filesystem (DinD bind-mount gotcha).
-      - zeroclaw-unrestricted-workspace:/workspace
-
-  # =========================================================================
-  # REMOVED: the old `nanoclaw` host-process pseudo-service block and its
-  # container-runner.patch.md wiring. ZeroClaw needs neither.
+  # Agent-tier services (MCP gateways + ZeroClaw + optional DinD) are
+  # defined in docker-compose.tiers.yml (generated from tiers.yaml).
   # =========================================================================

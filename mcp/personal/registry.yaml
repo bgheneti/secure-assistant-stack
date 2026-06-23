@@ -1,10 +1,5 @@
-# No MCP servers enabled for the personal tier.
+# Enabled servers for the personal tier (subset of catalog.yaml).
 # Gmail / Google Calendar are handled by OneCLI directly, NOT via the gateway.
-#
-# An empty registry means this gateway exposes zero tools. If the gateway
-# refuses to start on an empty registry (crash-loop), you most likely don't need
-# the mcp-personal service at all under this design - comment it out in
-# docker-compose.yml. Or expose Marvin here by replacing the empty map with:
-#   marvin:
-#     ref: ""
-registry: {}
+registry:
+  marvin:
+    ref: ""

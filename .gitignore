@@ -1,1 +1,6 @@
+# secrets — never commit
 .env
+
+# generated — re-create from tiers.yaml via scripts/generate-tiers.py
+docker-compose.tiers.yml
+zeroclaw/*/config.toml

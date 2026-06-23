@@ -1,191 +1,145 @@
-# Self-Hosted Personal AI Assistant — ZeroClaw stack
+# Secure Assistant Stack
 
-A private AI assistant on your own hardware. **TEE-confidential inference**, the **agent never
-holds raw credentials**, **default-deny egress**, and **per-tier least privilege** — wired as
-plain Docker Compose, portable from a Mac dev VM to an Unraid prod VM via one cloud-init seed.
+Self-hosted agent tiers with TEE-confidential inference and no unfiltered egress — the agent reads your integrations through a vault that provides fine tuned access controls never hands over the keys. Mac + Multipass (bare-metal Linux support planned).
 
-This README is the front door. `PROJECT-STATE.md` is the deeper build log (decisions, hard-won
-lessons, config templates, open VERIFY items). Read this to run it; read that to understand why.
+## Requirements
 
----
+| Resource | Required | Notes |
+|----------|----------|-------|
+| [Multipass](https://multipass.run) | Yes (Mac primary path) | `brew install multipass`. Linux VM options below. |
+| Docker + Compose plugin | No | Auto-installed inside the VM by bring-up.sh. |
+| [PrivateMode](https://privatemode.ai) API key | No | LiteLLM can fall back to any OpenAI-compatible endpoint without it. |
+| SaaS credentials (Gmail, Marvin, etc.) | No | Needed only for identity-bearing tiers (updates, tasks). |
 
-## 1. What it is
+## Usage options (not yet tested)
 
-Three agent **tiers**, each a separate ZeroClaw container with a hard isolation boundary:
+The stack has only been validated on macOS + Multipass. Promising untested alternatives:
 
-| Tier | Channel | Tools | Credential path | Tool runtime |
-|---|---|---|---|---|
-| **updates** | WhatsApp (web mode) | Gmail / GCal | `mcp-personal` gateway → OneCLI identity `personal` | native |
-| **tasks** | Signal | Amazing Marvin | `mcp-tasks` gateway → OneCLI identity `tasks` | native |
-| **unrestricted** | none (CLI/dashboard) | local shell/file/browser/http/git | none (no SaaS creds) | Docker-sandboxed (DinD) |
+- **Multipass on Linux** — `snap install multipass` then same `launch-multipass.sh` flow.
+- **libvirt / VirtualBox** — seed `user-data.yaml` via cloud-init on any Ubuntu 22.04+ VM.
+- **Docker directly on host** — clone repo, `export COMPOSE_FILE=docker-compose.yml:docker-compose.tiers.yml`, `docker compose up -d`. Missing: bring-up.sh automation, cloud-init, multipass file transfer.
+- **Tailscale** (planned) — replace SSH tunnels with Tailscale SSH + MagicDNS for dashboard access. Eliminates the `ssh -L` step.
 
-Supporting services shared by all tiers: **LiteLLM → PrivateMode** (the TEE model path),
-**OneCLI** (credential broker / vault), **Squid** (default-deny egress allowlist), and two
-**Docker MCP Gateways** (one per sensitive tier).
-
-```
- egress-net (bridge) → INTERNET ── only Squid is attached → the sole way out
-        ▲
-        │ HTTPS_PROXY (allowlist; no TLS bump)
-╔═══════╪═══ assistant-net (internal: true — NO direct internet) ═══════════════╗
-║  squid  litellm ─► privatemode-proxy ─(remote enclave, TEE attested)          ║
-║  onecli ◄─ mcp-personal ─spawns► [google MCP]   onecli-db                     ║
-║          ◄─ mcp-tasks ───spawns► [marvin MCP]                                 ║
-║  zeroclaw-updates ─model► litellm   ─tools► mcp-personal                      ║
-║  zeroclaw-tasks   ─model► litellm   ─tools► mcp-tasks                         ║
-║  zeroclaw-unrestricted ─model► litellm   ─tools► dind-unrestricted ─spawns►   ║
-║                                              [assistant-sandbox tool container]║
-╚════════════════════════════════════════════════════════════════════════════╝
-   admin-net (DEV ONLY, non-internal): dashboards only — onecli/mcp-*/zeroclaw-*
-```
-
-Two invariants the design protects:
-- **The model path is never intercepted.** ZeroClaw → LiteLLM → PrivateMode runs by service
-  name on the internal net (no proxy hop), so enclave attestation/encryption survive.
-- **The floor is default-deny.** Everything sits on `assistant-net` (`internal: true`); only
-  Squid bridges out, and only to allowlisted hosts.
-
----
-
-## 2. Files
-
-| Path | What |
-|---|---|
-| `docker-compose.yml` | the whole stack: supporting services + 3 ZeroClaw tiers + DinD + 3 networks |
-| `.env.example` | copy to `.env`; all secrets the compose reads |
-| `Dockerfile.sandbox` | builds `assistant-sandbox:1` (uv+py3.13, node LTS+corepack, gh, ripgrep, jq, git, rtk) — the unrestricted tier's tool image |
-| `scripts/preflight.sh` | static + runtime validator (+ zero-Anthropic check) |
-| `user-data.yaml` | cloud-init: provisions the VM (Multipass dev / Unraid prod) |
-| `squid/{squid.conf,allowlist.txt}` | default-deny egress; human-readable allowlist |
-| `litellm/config.yaml` | PrivateMode upstream; logging off; **set the real model id** |
-| `mcp/personal/*`, `mcp/tasks/*` | per-tier gateway catalog/registry/config/secrets |
-| `onecli/VAULT-SETUP.md` | create the two identities + scoped creds + CA export |
-| per-tier `config.toml` | lives in each `zeroclaw-<tier>-data` volume (templates in PROJECT-STATE) |
-
----
-
-## 3. Prerequisites
-
-- Docker Engine + Compose v2 (`docker compose`, not `docker-compose`).
-- A **PrivateMode** API key and your real model id.
-- For channels: a phone with WhatsApp (web-mode QR linking) and/or `signal-cli` for Signal.
-- ~8 GB RAM / 4 vCPU / 40 GB if running in a VM (the DinD + tool images need headroom).
-
----
-
-## 4. Choose how to run it
-
-There are two dev paths on a Mac. **The VM is recommended** — it removes a whole class of
-Docker Desktop quirks and matches prod.
-
-### Path A — Multipass VM (recommended)
+## Primary workflow (configure → build → provision → use)
 
 ```bash
-multipass launch 24.04 --name assistant --cpus 4 --memory 8G --disk 40G --cloud-init user-data.yaml
-multipass shell assistant
-nano /opt/assistant-stack/.env          # fill secrets + set the model id in litellm/config.yaml
-bash /opt/bring-up.sh                    # supporting stack → tiers → build sandbox image
+# 1. Configure tiers (optional — 3 default tiers work out of box)
+cp .env.example .env        # fill in placeholders
+vim tiers.yaml              # add/remove tiers, change identities, ports, tools
+
+# 2. Generate compose fragment + tier configs
+python3 scripts/generate-tiers.py
+
+# 3. Build + start VM
+./launch-multipass.sh --local   # transfers repo + .env; waits for bring-up
 ```
-Why it's better: the `internal: true` dashboards work on-box (no LinuxKit hop, so no
-`localhost` refusal), the spawn-containment checks behave like prod, and volumes are native
-ext4 (the bind-mount corruption in LESSON #2 doesn't apply). Reach dashboards from the Mac:
-```bash
-ssh -L 10254:127.0.0.1:10254 -L 3002:127.0.0.1:3002 assistant@<vm-ipv4>   # vm ip: multipass info assistant
-# browse http://localhost:10254 (OneCLI) and :3002 (unrestricted) on the Mac
-```
-Do **not** `multipass mount` your Mac repo and run from it — that's the SSHFS/9p trap; clone
-onto the VM (cloud-init does this) and edit there.
 
-### Path B — Docker Desktop directly on the Mac
-
-Works, with one caveat baked into the compose: `assistant-net` is `internal: true`, and
-Desktop's host→container forwarder can't route into an internal subnet — so dashboards get
-"connection refused". The compose includes a **DEV-ONLY `admin-net`** (a non-internal bridge)
-that the dashboard services dual-home onto so the published `127.0.0.1` ports route. Nothing
-extra to do — it's already wired. Just know `admin-net` is a dev accommodation, not part of
-the prod floor (see §8).
-
----
-
-## 5. Bring-up (manual, either path)
+This creates an Ubuntu VM (`assistant`), copies the repo, and runs `bring-up.sh` via cloud-init. After ~5 min, the entire stack is running.
 
 ```bash
-cp .env.example .env          # then fill secrets; set the model id in litellm/config.yaml
-openssl rand -base64 32       # -> ONECLI_SECRET_ENCRYPTION_KEY (BACK IT UP)
-
-# 1) supporting stack, wait for health
-docker compose up -d --wait squid onecli-db onecli litellm privatemode-proxy mcp-personal mcp-tasks
-
-# 2) OneCLI vault — dashboard at http://localhost:10254
-#    create 'personal' + 'tasks' identities; Google->personal, Marvin->tasks; export CA.
-#    (unrestricted needs NO identity — it brokers no SaaS creds.)
-
-# 3) agent tiers + contained DinD
-docker compose up -d dind-unrestricted zeroclaw-updates zeroclaw-tasks zeroclaw-unrestricted
-
-# 4) build the tool sandbox INSIDE the dind (host can't reach dind:2375)
-docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox
-
-# 5) configure each tier (templates in PROJECT-STATE), then validate
-docker exec -it zeroclaw-updates zeroclaw doctor      # run FIRST; confirms schema/health
-docker exec -it zeroclaw-updates zeroclaw onboard     # write/repair config.toml
-
-# 6) bind channels (interactive)
-docker exec -it zeroclaw-updates zeroclaw channel start   # WhatsApp: scan QR (Linked Devices)
-docker exec -it zeroclaw-tasks   zeroclaw channel start   # Signal via signal-cli
-
-# 7) verify
-bash scripts/preflight.sh
+# 4. Tunnel dashboard & create OneCLI identities (one-time interactive)
+multipass exec assistant -- ip addr show admin-net  # find admin IP, e.g. 10.0.2.x
+multipass list                                      # find VM's external IP
+ssh -L 10254:10.0.2.x:10254 ubuntu@<vm-external-ip>
+# Now open http://localhost:10254 in your browser → OneCLI dashboard
+# Other tier dashboards use ports from tiers.yaml (defaults: 3000, 3001, 3002).
+# Tunnel those too: ssh -L 3000:10.0.2.x:3000 ... (repeat per tier)
 ```
+Settings → Agents: create **personal** + **tasks** (one per identity in tiers.yaml).
+Copy each `aoc_` token into `.env` on the VM (`ONECLI_TOKEN_PERSONAL=...`, `ONECLI_TOKEN_TASKS=...`).
+Settings → Connections: authorize Gmail (personal), paste Amazing Marvin API key (tasks).
 
----
-
-## 6. Using the assistant
-
-**Dashboards** (web UI — chat, memory, cron, config): OneCLI `:10254`, mcp-personal `:8811`,
-mcp-tasks `:8812`, and the tiers at `:3000` (updates) / `:3001` (tasks) / `:3002` (unrestricted).
-ZeroClaw gateways require **pairing auth** — grab the one-time code and pair on first load:
 ```bash
-docker logs zeroclaw-updates | grep -i pair
+# 5. Restart with real tokens
+multipass exec assistant -- sh -c 'cd /opt/assistant-stack && \
+  docker compose up -d && \
+  python3 scripts/generate-tiers.py && \
+  bash -x bring-up.sh'
+
+# 6. Verify & bind channels
+multipass exec assistant -- bash /opt/assistant-stack/scripts/preflight.sh
+multipass exec assistant -- docker compose exec zeroclaw-updates zeroclaw channel start
 ```
 
-**The agents**, three ways:
-1. **Channels** (the point): message `updates` on WhatsApp, `tasks` on Signal.
-2. **CLI** (how you drive `unrestricted` and do setup): `docker exec -it zeroclaw-<tier> zeroclaw chat`.
-3. **Dashboard chat** once paired.
+That's it. The agent talks to your SaaS accounts through OneCLI's MITM proxy — it never holds a raw credential. Model inference runs through a TEE enclave.
 
----
+## Architecture
 
-## 7. Verification checklist
+```
+[Docker host VM]
+  assistant-net (internal, no internet) ─── egress only via Squid ─── INTERNET
+  ├── squid          default-deny allowlisted egress
+  ├── onecli         vault + MITM proxy (injects creds on the wire)
+  ├── onecli-db      Postgres backing the vault
+  ├── litellm        model router → PrivateMode TEE
+  ├── privatemode-proxy  TEE enclave proxy
+  ├── mcp-*          Docker MCP gateways (one per identity tier)
+  └── zeroclaw-*     agent containers (one per tier)
+```
 
-`scripts/preflight.sh` automates most of this. By hand, the load-bearing ones:
-- **Model bypass** — a question to a tier shows in `docker logs litellm`, NOT in `docker logs onecli`.
-- **Floor** — `docker run --rm --network assistant-net curlimages/curl -sS http://example.com` must FAIL.
-- **5-A spawn containment** — MCP gateways spawn server containers onto `assistant-net` (no internet);
-  confirm with `--dry-run --verbose`. DinD fallback if they land on the default bridge.
-- **5-A′ dind containment** — a tool container spawned by `dind-unrestricted` cannot reach the internet.
-- **Tier scoping** — `tasks` is DENIED Google by OneCLI; `unrestricted` has no SaaS creds at all.
-- **Zero Anthropic** — no Anthropic provider in any `config.toml`, none in the Squid allowlist,
-  model path is PrivateMode only (preflight's NO-ANTHROPIC phase).
+Default 3 tiers: **updates** (WhatsApp, Gmail, identity `personal`), **tasks** (Signal, Marvin, identity `tasks`), **unrestricted** (shell/file tools, no SaaS creds, sandboxed in DinD).
 
----
+## Security model
 
-## 8. Hardening & the prod path
+**Goal: the agent has no unfiltered egress and never holds a raw credential — every outbound request routes through a vault that injects scoped short-lived tokens on the wire.**
 
-This pilot favors getting end-to-end working; these are the known gaps to close before prod
-(tracked in PROJECT-STATE "What's PENDING"):
-- **DinD `2375` is unauthenticated** on `assistant-net` — switch to TLS (`2376`) or a dedicated
-  net; consider Sysbox/rootless to drop `privileged: true`.
-- **Pin every image by digest** (compose uses `:latest`/tags as placeholders).
-- **LiteLLM virtual keys/budgets** need Postgres (deferred; master key meanwhile).
-- **Secrets as files** under `/mnt/user/appdata`, not inline.
-- **`admin-net` is dev-only** — on the pivot, delete the dashboard `ports:` and put a
-  **Tailscale** sidecar on `admin-net` (it dials out, needs no inbound port; gate dashboards by
-  tailnet identity). Keep the Tailscale node OFF `assistant-net`.
-- **Unraid prod**: deploy the same compose as a Portainer stack, volumes under
-  `/mnt/user/appdata/assistant/…`, dashboards on `127.0.0.1` reached via SSH/Tailscale. On a
-  real VM the `internal: true` dashboard refusal doesn't occur, so `admin-net` isn't needed.
+The standard risk framework lists six categories: (1) prompt injection, (2) dangerous packages, (3) sensitive file access, (4) proprietary data exfiltration, (5) unauthorized privileged actions, and (6) viruses. Simon Willison condenses these into the **lethal trifecta**: (a) access to private data, (b) exposure to untrusted content, and (c) ability to communicate externally — any two together are dangerous.
 
-> The most isolated option is also the most operationally heavy. If your MCP set stays tiny and
-> trusted, in-agent MCPs with a per-tier OneCLI identity deliver most of this at lower ops cost —
-> the lighter path, documented for when you want it.
+This project addresses (c) aggressively and uses that to bound the others:
+
+| Mitigated | How |
+|-----------|-----|
+| Data exfiltration (risk 4, trifecta a+c) | No direct internet. All egress through Squid (default-deny allowlist) + OneCLI MITM proxy. Agent can't phone home. |
+| Credential theft via injection (risk 1, trifecta b→a) | Agent has no stored secrets. OneCLI injects per-request, scoped tokens at the proxy layer. An injected prompt can ask for credentials but nothing will hand them over. |
+| Privileged action without consent (risk 5) | OneCLI acts as consent proxy — each SaaS action requires a scoped token generated by the vault, not by the agent. |
+| Viruses / persistence (risk 6) | Containers are ephemeral. No host socket mount. Sandbox tier runs inside a contained DinD with no network. |
+
+| Not mitigated | Why |
+|---------------|-----|
+| Prompt injection → tool misuse (risk 1 continued) | An injected prompt can still trick the agent into using its legitimate tools in unintended ways (e.g. "send that email"). Vault model doesn't prevent tool-level misuse. |
+| Dangerous packages / supply chain (risk 2) | No SBOM validation. The `commands` allowlist on identity tiers helps but assumes the allowlist is correct. |
+| Sensitive file access (risk 3) | Workspace volumes are shared by design. No per-file ACL. Mitigated only by isolation: identity tiers have no shell, and the sandbox tier has no credentials. |
+| Covert channel via legitimate egress | If an allowlisted domain is malicious or compromised, data can flow out through it. No egress content inspection. |
+
+The unrestricted tier is a deliberate gap: it has shell/file/browser tools and DinD sandbox with Squid egress. It has no SaaS credentials, so the trifecta never completes — but if you add credentials to it, treat it as a separate risk surface.
+
+## Configuration
+
+**`tiers.yaml`** — define N tiers, each with identity, MCP gateway, port, command allowlist, sandbox flag. Edit this, re-run `generate-tiers.py`.
+
+**`.env`** — OneCLI tokens (one per identity), MCP gateway tokens, LiteLLM master key, PrivateMode key, DB password. Fill in before launching VM; update after provisioning OneCLI identities.
+
+**`squid/allowlist.txt`** — default-deny egress. Add domains your tools need.
+
+**`mcp/<tier>/`** — per-tier MCP gateway config (registry.yaml, secrets, catalog).
+
+## VM details
+
+### Management
+
+| Action | Command (from Mac host) |
+|--------|-------------------------|
+| Create VM | `./launch-multipass.sh` (clones from GitHub) |
+| Create with local state (recommended) | `./launch-multipass.sh --local` (transfers repo + uncommitted changes + `.env`) |
+| SSH in | `multipass shell assistant` |
+| Tunnel dashboards | `ssh -L 10254:10.0.2.x:10254 ubuntu@<vm-ip>` (ports per tiers.yaml) |
+| Watch bring-up logs | `multipass exec assistant -- journalctl -u cloud-final -f` |
+| Teardown | `multipass delete assistant && multipass purge` |
+
+### Debugging
+
+| Check this | From Mac host | Or from inside VM |
+|---|---|---|
+| Container statuses | `multipass exec assistant -- docker compose ps` | `docker compose ps` |
+| Tier logs | `multipass exec assistant -- docker compose logs --tail=50 zeroclaw-<tier>` | `docker compose logs --tail=50 zeroclaw-<tier>` |
+| Agent health | `multipass exec assistant -- docker compose exec zeroclaw-<tier> zeroclaw doctor` | `docker compose exec zeroclaw-<tier> zeroclaw doctor` |
+| Bind channel | `multipass exec assistant -- docker compose exec zeroclaw-<tier> zeroclaw channel start` | `docker compose exec zeroclaw-<tier> zeroclaw channel start` |
+| Full validation | `multipass exec assistant -- bash /opt/assistant-stack/scripts/preflight.sh` | `bash scripts/preflight.sh` |
+| Restart a tier | `multipass exec assistant -- docker compose restart zeroclaw-<tier>` | `docker compose restart zeroclaw-<tier>` |
+
+### Known quirks
+
+- **CA cert race:** OneCLI generates its CA cert on first start. bring-up.sh waits for it in a retry loop, copies it to a shared volume, and sets `SSL_CERT_FILE` on every tier.
+- **MCP token mismatch:** If `zeroclaw doctor` shows no MCP connection, the `MCP_GATEWAY_AUTH_TOKEN` in the tier's config.toml doesn't match `.env`. Re-run `scripts/generate-tiers.py` after updating `.env`.
+- **Sandbox build:** The DinD sandbox Dockerfile builds INSIDE the contained daemon — the host never accesses the inner Docker socket.
+- **macOS networking:** `internal: true` Docker networks block host→container routing on macOS. The `admin-net` bridge works around this. Not needed on real Linux.

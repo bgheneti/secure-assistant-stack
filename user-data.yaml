@@ -79,36 +79,89 @@ write_files:
       cd "$STACK_DIR"
 
       echo "== 1. .env =="
-      test -f .env || cp .env.example .env
+      if [ ! -f .env ]; then cp .env.example .env; fi
+      set -a; source .env; set +a
       if grep -q 'REPLACE\|change-me' .env; then
-        echo "  !! .env not fully populated (placeholders present)."
-        echo "     Use ./launch-multipass.sh (injects your local .env), or edit $STACK_DIR/.env."
+        echo "  WARN: .env still has REPLACE/change-me placeholders."
+        echo "  (bring-up will still start the supporting stack so you can create OneCLI identities)"
       fi
 
-      echo "== 2. Supporting stack (waits for health) =="
-      docker compose up -d --wait \
-        squid onecli-db onecli litellm privatemode-proxy mcp-personal mcp-tasks
+      echo "== 2. Generate tier definitions from tiers.yaml =="
+      export COMPOSE_FILE=docker-compose.yml:docker-compose.tiers.yml
+      scripts/generate-tiers.py
 
-      echo "== 3. Agent tiers + contained DinD =="
-      docker compose up -d \
-        dind-unrestricted zeroclaw-updates zeroclaw-tasks zeroclaw-unrestricted
-        for t in updates tasks unrestricted; do
-          sed "s|LITELLM_MASTER_KEY|$LITELLM_MASTER_KEY|g" zeroclaw/$t/config.toml > /tmp/conf-$t.toml
-          docker cp /tmp/conf-$t.toml "zeroclaw-$t:/zeroclaw-data/.zeroclaw/config.toml"
+      echo "== 3. Supporting stack (waits for health) =="
+      docker compose up -d --wait \
+        squid onecli-db onecli litellm privatemode-proxy
+
+      echo "== 4. Export OneCLI CA cert to shared volume =="
+      _i=0; _max=15
+      while [ $_i -lt $_max ]; do
+        if docker exec onecli test -f /app/data/gateway/ca.pem 2>/dev/null; then
+          docker exec onecli mkdir -p /data/ca
+          docker exec onecli cp /app/data/gateway/ca.pem /data/ca/ca.pem
+          docker exec onecli cp /app/data/gateway/ca.key /data/ca/ca.key
+          echo "  CA cert exported."
+          break
+        fi
+        _i=$((_i + 1))
+        echo "  waiting for OneCLI to generate CA... ($_i/$_max)"
+        sleep 2
+      done
+
+      echo "== 5. Agent tiers + optional DinD =="
+      docker compose up -d
+      echo "  (all services started — check 'docker compose ps')"
+
+      echo "== 6. Inject secrets into per-tier config.toml =="
+      _ok=1
+      # collect placeholder tokens from generated configs
+      _vars_needed="LITELLM_MASTER_KEY"
+      for _cf in zeroclaw/*/config.toml; do
+        [ -f "$_cf" ] || continue
+        _vars_needed="$_vars_needed $(sed -n 's/.*Bearer \([A-Z_]*\).*/\1/p' "$_cf")"
+      done
+      _vars_needed=$(echo "$_vars_needed" | tr ' ' '\n' | sort -u)
+      for _var in $_vars_needed; do
+        eval "_val=\${$_var:-}"
+        case "$_val" in REPLACE*|''|change-me*)
+          echo "  WARN: $_var is empty or placeholder — skipping config injection"
+          _ok=0; break ;;
+        esac
+      done
+      if [ "$_ok" -eq 1 ]; then
+        _sed_cmd="sed"
+        for _var in $_vars_needed; do
+          eval "_val=\$$_var"
+          _sed_cmd="$_sed_cmd -e \"s|$_var|$_val|g\""
+        done
+        for _cf in zeroclaw/*/config.toml; do
+          _tier=$(basename "$(dirname "$_cf")")
+          [ -f "$_cf" ] || { echo "  !! $_cf missing — skipping $_tier"; continue; }
+          eval "$_sed_cmd '$_cf' > \"/tmp/conf-$_tier.toml\""
+          docker cp "/tmp/conf-$_tier.toml" "zeroclaw-$_tier:/zeroclaw-data/.zeroclaw/config.toml"
         done
         docker compose restart zeroclaw-*
+      fi
 
-      echo "== 4. Build the tool sandbox INSIDE the dind (host can't reach dind:2375) =="
+      echo "== 7. Build the tool sandbox INSIDE the dind =="
       # base-image pull goes via dind's HTTPS_PROXY=squid -> registry must be allowlisted
-      docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox \
-        && docker exec dind-unrestricted docker images | grep assistant-sandbox \
-        || echo "  !! sandbox build failed — check squid allowlist has the registry + Dockerfile digest"
+      if docker ps --format '{{.Names}}' | grep -q dind-unrestricted; then
+        docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox \
+          && docker exec dind-unrestricted docker images | grep assistant-sandbox \
+          || echo "  !! sandbox build failed — check squid allowlist has the registry + Dockerfile digest"
+      else
+        echo "  (no dind-unrestricted — skip sandbox build; see tiers.yaml build_sandbox)"
+      fi
 
       echo "== NEXT (interactive) =="
-      echo "  * OneCLI dashboard  http://localhost:10254  -> create personal + tasks identities, export CA"
-      echo "  * per tier:  docker exec -it zeroclaw-<tier> zeroclaw doctor   (then onboard)"
-      echo "  * channels:  docker exec -it zeroclaw-updates zeroclaw channel start   (WhatsApp QR)"
-      echo "  * verify:    bash $STACK_DIR/scripts/preflight.sh"
+      echo "  1. OneCLI dashboard  http://localhost:10254"
+      echo "     - Create identities matching tiers.yaml -> copy tokens to .env"
+      echo "  2. After .env update, re-run: /opt/bring-up.sh"
+      echo "     (config injection and CA export re-run; containers restart)"
+      echo "  3. Verify: docker compose exec zeroclaw-updates zeroclaw doctor"
+      echo "  4. Channels: docker compose exec zeroclaw-updates zeroclaw channel start"
+      echo "  5. Verify: bash $STACK_DIR/scripts/preflight.sh"
 
 runcmd:
   # ---- Docker Engine + compose plugin (official convenience script) ----------
@@ -116,11 +169,15 @@ runcmd:
   - systemctl enable --now docker
   # ---- fetch the stack -------------------------------------------------------
   - mkdir -p /opt && chown assistant:assistant /opt
-  - sudo -u assistant git clone https://github.com/bgheneti/zeroclaw-secure-stack.git /opt/assistant-stack || true
+  # Clone from GitHub (or receive transferred local state from launch-multipass.sh).
+  # launch-multipass.sh --local transfers the repo via multipass after boot, so the
+  # clone below is skipped if /opt/assistant-stack already exists.
+  - test -d /opt/assistant-stack || sudo -u assistant git clone https://github.com/bgheneti/zeroclaw-secure-stack.git /opt/assistant-stack
   # ---- .env: template fallback now; launch-multipass.sh TRANSFERS your real .env
   #      over multipass's channel after boot (so secrets never enter cloud-init) ----
   - cd /opt/assistant-stack && test -f .env || sudo -u assistant cp .env.example .env
-  - sudo -u assistant chown -R 65534:65534 /opt/assistant-stack/zeroclaw
+  # NOTE: zeroclaw config.toml templates are owned by assistant; the data volumes
+  # are managed by Docker, so no chown needed.
   # ---- friendly next-steps banner --------------------------------------------
   - echo "Run /opt/bring-up.sh  (launch-multipass.sh transfers your real .env in after boot)" > /etc/motd
 
