@@ -13,8 +13,8 @@ Signal, or Matrix. It can manage your email, tasks, and calendar — but it neve
 API keys directly, can't open arbitrary URLs, and can't phone home to a model provider 
 without going through an allowlisted egress proxy first.
 
-Three tiers ship by default: **updates** (Gmail + WhatsApp, your personal identity), 
-**tasks** (Marvin + Signal, a separate identity), and **unrestricted** (shell and file 
+Three tiers ship by default: **updates** (Gmail + channels (ie. whatsapp), your personal identity), 
+**tasks** (Marvin + channels (ie. whatsapp), a separate identity), and **unrestricted** (shell and file 
 tools, sandboxed in Docker-in-Docker with no SaaS credentials). Each tier is its own 
 container with its own blast radius.
 
