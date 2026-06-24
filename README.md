@@ -2,8 +2,9 @@
 
 ![status](https://img.shields.io/badge/status-pilot-orange) ![platform](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Multipass-blue)
 
-**A security and privacy conscious approach to running ZeroClaw using a Virtual Machine**
-> composes proven open-source building blocks under one default-deny roof. Adds a tier model and bring-up automation on top. It does **not** reinvent sandboxing or secret injection.
+**Personal agents that can't exfiltrate your credentials or call home — by construction, not by policy.**
+> Composes proven open-source components under one default-deny roof. Adds a tiered identity 
+> model and one-command bring-up on top. Does **not** reinvent sandboxing or secret injection.
 
 ```bash
 brew install multipass
