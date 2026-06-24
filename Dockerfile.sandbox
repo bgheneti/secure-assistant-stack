@@ -27,11 +27,14 @@ FROM cgr.dev/chainguard/wolfi-base
 
 # Whole toolset from Wolfi apks (glibc, signed, SBOM'd). VERIFY exact package names
 # against `apk search` — Wolfi version-streams (python-3.13, nodejs-22) and renames.
-RUN apk add --no-cache \
-      python-3.13 uv \
-      nodejs-22 npm \
-      git gh ripgrep jq \
-      bash coreutils curl wget ca-certificates openssh-client \
+# wolfi-base ships ONLY the authenticated apk.cgr.dev/chainguard repo (15 pkgs w/o
+# auth). Add the public packages.wolfi.dev/os repo to get the full 180k package set.
+RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories \
+  && apk add --no-cache \
+       python-3.13 uv \
+       nodejs-22 npm \
+       git gh ripgrep jq \
+       bash coreutils curl wget ca-certificates openssh-client \
   # pnpm: corepack is NOT bundled in Wolfi's node pkg, so install via npm. Pin exact.
   && npm install -g pnpm@10 \
   && rm -rf /root/.npm

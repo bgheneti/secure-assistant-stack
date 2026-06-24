@@ -4,8 +4,9 @@
 # stack as Docker Compose services (supporting stack + ZeroClaw tiers + DinD).
 #
 # Same file works for: Multipass (Mac dev) AND an Unraid KVM VM (prod) -> parity.
-# Interactive bits (OneCLI vault creds, ZeroClaw onboard, channel pairing) are
-# NOT automated — cloud-init preps everything up to that point.
+# bring-up.sh auto-provisions OneCLI identities + tokens. The only interactive
+# bits left are SaaS-connection authorization (Gmail/Marvin in the OneCLI
+# dashboard) and ZeroClaw channel pairing (WhatsApp/Signal).
 #
 # -----------------------------------------------------------------------------
 # LAUNCH ON A MAC WITH MULTIPASS (use the helper — it injects your SSH key + .env):
@@ -94,7 +95,17 @@ write_files:
       docker compose up -d --wait \
         squid onecli-db onecli litellm privatemode-proxy
 
-      echo "== 4. Export OneCLI CA cert to shared volume =="
+      echo "== 4. Provision OneCLI identities + tokens =="
+      # Create an identity per tiers.yaml identity-bearing tier and write its aoc_
+      # token into .env (replaces the manual dashboard dance). Idempotent: existing
+      # identities are skipped. No-op if OneCLI is unreachable (keeps placeholders).
+      if python3 scripts/provision-identities.py; then
+        set -a; source .env; set +a   # pick up the freshly written tokens
+      else
+        echo "  WARN: identity provisioning skipped — tokens stay as placeholders."
+      fi
+
+      echo "== 5. Export OneCLI CA cert to shared volume =="
       _i=0; _max=15
       while [ $_i -lt $_max ]; do
         if docker exec onecli test -f /app/data/gateway/ca.pem 2>/dev/null; then
@@ -110,12 +121,13 @@ write_files:
         sleep 2
       done
 
-      echo "== 5. Agent tiers + optional DinD =="
+      echo "== 6. Agent tiers + optional DinD =="
       docker compose up -d
       echo "  (all services started — check 'docker compose ps')"
 
-      echo "== 6. Inject secrets into per-tier config.toml =="
+      echo "== 7. Inject secrets into per-tier config.toml =="
       _ok=1
+      _INJ_TMP=$(mktemp -d); trap 'rm -rf "$_INJ_TMP"' EXIT   # avoid root-vs-user /tmp collisions
       # collect placeholder tokens from generated configs
       _vars_needed="LITELLM_MASTER_KEY"
       for _cf in zeroclaw/*/config.toml; do
@@ -139,13 +151,13 @@ write_files:
         for _cf in zeroclaw/*/config.toml; do
           _tier=$(basename "$(dirname "$_cf")")
           [ -f "$_cf" ] || { echo "  !! $_cf missing — skipping $_tier"; continue; }
-          eval "$_sed_cmd '$_cf' > \"/tmp/conf-$_tier.toml\""
-          docker cp "/tmp/conf-$_tier.toml" "zeroclaw-$_tier:/zeroclaw-data/.zeroclaw/config.toml"
+          eval "$_sed_cmd '$_cf' > \"$_INJ_TMP/conf-$_tier.toml\""
+          docker cp "$_INJ_TMP/conf-$_tier.toml" "zeroclaw-$_tier:/zeroclaw-data/.zeroclaw/config.toml"
         done
         docker compose restart zeroclaw-*
       fi
 
-      echo "== 7. Build the tool sandbox INSIDE the dind =="
+      echo "== 8. Build the tool sandbox INSIDE the dind =="
       # Build containers live on dind's nested bridge where the `squid` hostname
       # does NOT resolve. Pass squid's assistant-net IP as BuildKit proxy build-
       # args so apk can reach packages.wolfi.dev. Registries/CDNs must be in
@@ -164,13 +176,12 @@ write_files:
       fi
 
       echo "== NEXT (interactive) =="
-      echo "  1. OneCLI dashboard  http://localhost:10254"
-      echo "     - Create identities matching tiers.yaml -> copy tokens to .env"
-      echo "  2. After .env update, re-run: /opt/bring-up.sh"
-      echo "     (config injection and CA export re-run; containers restart)"
-      echo "  3. Verify: docker compose exec zeroclaw-updates zeroclaw doctor"
+      echo "  1. (optional) OneCLI dashboard http://localhost:10254"
+      echo "     - Identities + tokens are auto-provisioned by step 4."
+      echo "     - Authorize SaaS connections: Gmail -> 'personal', Marvin -> 'tasks'"
+      echo "  2. Verify: bash $STACK_DIR/scripts/preflight.sh   (goal: FAIL=0)"
+      echo "  3. Health:  docker compose exec zeroclaw-updates zeroclaw doctor"
       echo "  4. Channels: docker compose exec zeroclaw-updates zeroclaw channel start"
-      echo "  5. Verify: bash $STACK_DIR/scripts/preflight.sh"
 
 runcmd:
   # ---- Docker Engine + compose plugin (official convenience script) ----------
