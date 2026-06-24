@@ -5,6 +5,11 @@
 **A security and privacy conscious approach to running ZeroClaw using a Virtual Machine**
 > composes proven open-source building blocks under one default-deny roof. Adds a tier model and bring-up automation on top. It does **not** reinvent sandboxing or secret injection.
 
+```bash
+brew install multipass
+./launch-multipass.sh --local && multipass shell assistant
+```
+
 ## Features
 
 - **Default-deny egress** — no host internet; every ouTDound packet is evaluated against `squid/allowlist.txt`.
@@ -15,15 +20,9 @@
 - **One-command bring-up** — `launch-multipass.sh --local` provisions the VM; `bring-up.sh` starts and wires the whole stack.
 - **Verifiable by design** — `scripts/preflight.sh` asserts the floor holds, certs are mounted, MCP gateways are authenticated, and the egress floor holds (no direct model-provider or internet leak).
 
-## Getting started
-```bash
-brew install multipass
-./launch-multipass.sh --local && multipass shell assistant
-```
-
 ## Contents
 
-#### [Why](#why) · [Usage](#usage) · [Features](#features) · [Architecture](#architecture) · [Configuration](#configuration)
+#### [Why](#why) · [Usage](#usage) · [Architecture](#architecture) · [Configuration](#configuration)
 #### [VM details](#vm-details) · [Usage options](#usage-options-not-yet-tested) · [Roadmap](#roadmap) · [Contributing](#contributing) · [License](#license)
 ### Other Docs
 #### [Security model](docs/SECURITY.md) · [Comparison with similar projects](docs/COMPARISON.md)
