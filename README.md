@@ -114,7 +114,7 @@ Navigate to http://localhost:3000 in your browser
 
 | Component | Role |
 |-----------|------|
-| [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | the agent runtime — one container per tier |
+| [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | personal agent runtime (think: self-hosted Claude/ChatGPT you control) — one isolated container per tier |
 | [OneCLI](https://github.com/onecli/onecli) | credential vault + man-in-the-middle (MITM) proxy that swaps placeholders for real secrets on the wire |
 | [LiteLLM](https://github.com/BerriAI/litellm) | model router |
 | [PrivateMode](https://privatemode.ai) | TEE-confidential inference enclave |
