@@ -4,53 +4,42 @@
 
 **A security and privacy conscious approach to running ZeroClaw using a Virtual Machine**
 > composes proven open-source building blocks under one default-deny roof. Adds a tier model and bring-up automation on top. It does **not** reinvent sandboxing or secret injection.
->
-> | Component | Role |
-> |-----------|------|
-> | [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | the agent runtime — one container per tier |
-> | [OneCLI](https://github.com/onecli/onecli) | credential vault + man-in-the-middle (MITM) proxy that swaps placeholders for real secrets on the wire |
-> | [LiteLLM](https://github.com/BerriAI/litellm) | model router |
-> | [PrivateMode](https://privatemode.ai) | TEE-confidential inference enclave |
-> | [Squid](https://github.com/ubuntu/squid) | default-deny, allowlisted egress (the only way out) |
-> | [Multipass](https://multipass.run) | one-command Ubuntu VM for Mac dev |
->
-> **Status:** pilot — validated on macOS + Multipass. Other platforms (Multipass-on-Linux, libvirt/VirtualBox, Docker-on-host) are untested, and Tailscale-based dashboard access is planned. See [Usage options](#usage-options-not-yet-tested).
-
-### ***[Start here](#usage)** to spin up your Assistant Stack VM*
->
-> ```bash
-> ./launch-multipass.sh --local && multipass shell assistant
-> ```
-
-## Contents
-
-- [Why](#why) · [Features](#features) · [Requirements](#requirements)
-- [Usage](#usage) · [Architecture](#architecture) · [Configuration](#configuration)
-- [VM details](#vm-details) · [Usage options](#usage-options-not-yet-tested)
-- [Roadmap](#roadmap) · [Contributing](#contributing) · [License](#license)
-- **Deeper docs:** [Security model](docs/SECURITY.md) · [Comparison with similar projects](docs/COMPARISON.md)
-
----
-
-## Why
-
-The "lethal trifecta" for an agent is any two of: access to private data, exposure to untrusted content, and the ability to communicate externally. Most agent setups hand it all three. This stack tries to remove two of the three **by construction** — the agent has **no direct internet** (every byte goes through an allowlist) and **no raw credentials** (the vault injects per-request, scoped tokens). Full threat model in [docs/SECURITY.md](docs/SECURITY.md).
-
-**What's actually been achieved.** The *containment substrate* is built and self-checking: the supporting stack and all three tiers come up, the TEE model path reaches PrivateMode and returns, the default-deny floor holds (allowlisted hosts pass, everything else is 403), tool containers inside the sandbox can't reach the network, and `scripts/preflight.sh` reports `FAIL=0`. The security architecture — the actual point of the pilot — is in place and verifiable.
-
-**What this is *not* yet.** A proven, day-to-day assistant. The end-to-end path — a channel bound (WhatsApp/Signal), a real brokered tool call succeeding through OneCLI, the agent answering you over chat — is the *next* milestone, not a finished one. The threat-model claims describe the design; live validation that "the agent does useful work and still can't exfiltrate" is tracked in [Roadmap](#roadmap).
-
-**Scope.** A single-user, self-hosted pilot: dev on macOS + Multipass today, aimed at a permanent Linux/ProxMox/NAS VM tomorrow. It is **not** hardened for multi-tenant or hostile use yet (see the "Not mitigated" rows in [docs/SECURITY.md](docs/SECURITY.md) and the Roadmap).
 
 ## Features
 
-- **Default-deny egress** — no host internet; every outbound packet is evaluated against `squid/allowlist.txt`.
+- **Default-deny egress** — no host internet; every ouTDound packet is evaluated against `squid/allowlist.txt`.
 - **Zero raw credentials** — OneCLI injects scoped, per-request tokens at the proxy layer; the agent only ever sees placeholders.
 - **TEE-confidential inference** — model calls route through a hardware enclave (PrivateMode), not a plain API.
 - **Tiered identities** — N agents, each with its own identity, Model Context Protocol (MCP) tools, command allowlist, and blast radius. Three ship by default: `updates`, `tasks`, `unrestricted`.
 - **Contained tool sandbox** — the unrestricted tier runs shell/file tools inside a sandboxed Docker-in-Docker (DinD) daemon with no external network.
 - **One-command bring-up** — `launch-multipass.sh --local` provisions the VM; `bring-up.sh` starts and wires the whole stack.
 - **Verifiable by design** — `scripts/preflight.sh` asserts the floor holds, certs are mounted, MCP gateways are authenticated, and the egress floor holds (no direct model-provider or internet leak).
+
+## Getting started
+```bash
+brew install multipass
+./launch-multipass.sh --local && multipass shell assistant
+```
+
+## Contents
+
+#### [Why](#why) · [Usage](#usage) · [Features](#features) · [Architecture](#architecture) · [Configuration](#configuration)
+#### [VM details](#vm-details) · [Usage options](#usage-options-not-yet-tested) · [Roadmap](#roadmap) · [Contributing](#contributing) · [License](#license)
+### Other Docs
+#### [Security model](docs/SECURITY.md) · [Comparison with similar projects](docs/COMPARISON.md)
+
+---
+
+## Why
+
+Simon Willison's **lethal trifecta for AI Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
+
+Most agent setups hand it all three. This stack tries to remove two of the three **by construction** — the agent has **no direct internet** (every byte goes through an allowlist) and **no raw credentials** (the vault injects per-request, scoped tokens).
+
+**Scope.** A single-user, self-hosted pilot: dev on macOS + Multipass today, aimed at a permanent Linux/ProxMox/NAS VM tomorrow. It is **not** hardened for multi-tenant or hostile use yet. Full threat model in [docs/SECURITY.md](docs/SECURITY.md).
+
+**Status:** pilot — validated on macOS + Multipass. Other platforms (Multipass-on-Linux, libvirt/VirtualBox, Docker-on-host) are untested, and Tailscale-based dashboard access is planned. See [Usage options](#usage-options-not-yet-tested).
+
 
 ## Usage
 
@@ -60,7 +49,7 @@ The "lethal trifecta" for an agent is any two of: access to private data, exposu
 - [PrivateMode](https://privatemode.ai) API key – LiteLLM can fall back to any less-secure OpenAI-compatible endpoint without it
 - SaaS credentials (Gmail, Marvin, etc.) – Needed only for identity-bearing tiers (updates, tasks)
 
-The whole stack comes up with one VM + one script. **Steps 1–3 run on your Mac; steps 4–6 run inside the VM as the `assistant` service account** — that's the only account with docker + `.env` access (`multipass shell` drops you in as `ubuntu`, so switch once with `sudo -iu assistant`). No per-command `sudo` is needed after that switch.
+The whole stack comes up with one VM + one script.**Steps 1–3 run on your Mac; steps 4–6 run inside the VM as the `assistant` service account**
 
 #### 1. Get the repo  · *Mac*
 
@@ -70,33 +59,25 @@ cd zeroclaw-secure-stack
 ```
 
 #### 2. Configure  · *Mac*
-
 ```bash
 cp .env.example .env      # fill in the placeholders (encryption key, API keys…)
 $EDITOR tiers.yaml        # optional: add/remove tiers, identities, ports, tools
 ```
-
-> The 3 default tiers work out of the box. OneCLI identity tokens are **not** set here — `bring-up.sh` provisions them automatically (step 4).
-
-#### 3. Launch the VM  · *Mac*
-
+> the 3 default tiers work out of the box
+#### 3. Setup the VM  · *Mac*
 ```bash
 ./launch-multipass.sh --local
 ```
 
-Provisions an Ubuntu VM named `assistant`, transfers the repo + `.env` into `/opt/assistant-stack`, and creates the `assistant` service account. It does **not** start the stack — that's the next step.
+### In VM
 
 #### 4. Start the stack  · *VM, as `assistant`*
-
 ```bash
 multipass shell assistant     # on the Mac — you're now `ubuntu` in the VM
 sudo -iu assistant            # switch to the service account (docker + .env access)
 cd $STACK_DIR
-bash /opt/bring-up.sh
+bash /opt/bring-up.sh         # generates tier configs from `tiers.yaml` starts stack. Re-run it any time after editing `.env`/`tiers.yaml`.
 ```
-
-`bring-up.sh` is one idempotent script: it generates tier configs from `tiers.yaml`, starts the supporting stack (Squid, OneCLI, LiteLLM, PrivateMode), **auto-creates the OneCLI identities and writes their `aoc_` tokens into `.env`** (`scripts/provision-identities.py`), exports the OneCLI CA, starts the agent tiers, injects secrets into per-tier configs, and builds the DinD sandbox image. Re-run it any time after editing `.env`/`tiers.yaml` (~2–4 min on first run).
-
 #### 5. Verify  · *VM, as `assistant`*
 
 ```bash
@@ -106,65 +87,89 @@ docker compose exec zeroclaw-updates zeroclaw doctor       # agent + MCP health
 
 #### 6. Authorize SaaS + bind a channel  · *the only manual part*
 
-Identities + tokens are now provisioned automatically; what's still hands-on is the SaaS connection behind each identity, then binding a messaging channel:
-
 ```bash
 # OneCLI dashboard (forward from the Mac): ssh -L 10254:127.0.0.1:10254 ubuntu@<vm-ip>
 #   Settings → Connections: connect Gmail -> 'personal'; paste Marvin API key -> 'tasks'
 docker compose exec zeroclaw-updates zeroclaw channel start
 ```
 
-> Prefer to create identities / grab tokens by hand? The dashboard's **Settings → Agents** page lists each identity and its `aoc_` token. The automatic flow uses the same OneCLI API — see `scripts/provision-identities.py`.
+#### 7. Access your ZeroClaw Stack on your Mac 🌟 
+```bash
+multipass ps # to get vm-ip
+ssh -L 10254:127.0.0.1:10254 -L 3000:127.0.0.1:3000 ubuntu@<vm-ip> # add -L 300X:127.0.0.1:300X to use other tiers
+```
+Navigate to http://localhost:3000 in your browser
 
-The agent now reaches your SaaS accounts through OneCLI's MITM proxy (no raw credentials) and runs inference through a TEE enclave.
+## Components
+
+| Component | Role |
+|-----------|------|
+| [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | the agent runtime — one container per tier |
+| [OneCLI](https://github.com/onecli/onecli) | credential vault + man-in-the-middle (MITM) proxy that swaps placeholders for real secrets on the wire |
+| [LiteLLM](https://github.com/BerriAI/litellm) | model router |
+| [PrivateMode](https://privatemode.ai) | TEE-confidential inference enclave |
+| [Squid](https://github.com/ubuntu/squid) | default-deny, allowlisted egress (the only way out) |
+| [Multipass](https://multipass.run) | one-command Ubuntu VM for Mac dev |
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  INTERNET(("INTERNET"))
+%%{init: {'theme': 'base', 'themeVariables': {
+  'fontFamily': 'monospace',
+  'fontSize': '15px',
+  'lineColor': '#444c56',
+  'clusterBkg': '#ffffff',
+  'clusterBorder': '#8c959f',
+  'edgeLabelBackground': '#ffffff'
+}}}%%
+flowchart TD
+  classDef agent    fill:#cfe3f7,stroke:#0b5cad,stroke-width:1.75px,color:#08305c
+  classDef vault    fill:#e7dbf7,stroke:#6a3fbf,stroke-width:1.75px,color:#311a5e
+  classDef db       fill:#cdeae0,stroke:#0f7a55,stroke-width:1.75px,color:#06382a
+  classDef dash     fill:#ffe8c2,stroke:#b5650a,stroke-width:1.75px,color:#5c3304
+  classDef squid    fill:#d6d8ff,stroke:#3730a3,stroke-width:2px,color:#1e1a66,font-weight:bold
+  classDef internet fill:#ffd9cc,stroke:#c2410c,stroke-width:2px,color:#6b2207,font-weight:bold
+  classDef user     fill:#f0eee9,stroke:#57606a,stroke-width:1.75px,color:#1f2328
 
-  subgraph VM[" Docker host VM "]
-    direction TB
+  USER(["👤 you (Mac)"]):::user
+  INTERNET(["INTERNET"]):::internet
 
-    subgraph anet["assistant-net — internal: NO direct internet (the data plane)"]
-      direction TB
-      zc["zeroclaw-*<br/>agent containers<br/>(one per tier)"]
-      mcp["mcp-*<br/>MCP gateways<br/>(identity tiers)"]
-      onecli["onecli<br/>vault + MITM proxy"]
-      onedb[("onecli-db<br/>Postgres")]
-      llm["litellm<br/>model router"]
-      pm["privatemode-proxy<br/>TEE enclave client"]
+  subgraph VM["Docker host VM"]
+    direction TD
+
+    subgraph anet["assistant-net — NO direct internet"]
+      direction TD
+      zc(["zeroclaw-*<br/>agent containers"]):::agent
+      mcp(["mcp-*<br/>MCP gateways"]):::agent
+      onecli(["onecli<br/>vault + MITM proxy"]):::vault
+      onedb[("onecli-db<br/>Postgres")]:::db
+      llm(["litellm<br/>model router"]):::agent
+      pm(["privatemode-proxy<br/>TEE enclave"]):::vault
     end
 
-    subgraph enet["egress-net (bridged)"]
-      squid["squid — default-deny allowlist<br/>THE ONLY WAY OUT"]
+    subgraph enet["egress-net"]
+      squid(["squid — default-deny allowlist<br/>THE ONLY WAY OUT"]):::squid
     end
 
-    subgraph adm["admin-net — dev only (dashboards)"]
-      dash["dashboards<br/>127.0.0.1:10254 · 3000–3002"]
+    subgraph adm["admin-net — dev only"]
+      dash(["dashboards<br/>127.0.0.1:10254 · 3000–3002"]):::dash
     end
   end
 
-  %% model / inference path
   zc -->|"model call"| llm --> pm
   pm -->|"attested inference"| squid
-
-  %% tool + credential-injection path
   zc -->|"tools"| mcp
   zc --> onecli
-  mcp -->|"proxy-auth + secret<br/>injection on :10255"| onecli
+  mcp -->|"proxy-auth + secret injection :10255"| onecli
   onecli --> onedb
-  onecli -->|"SaaS call<br/>(creds injected)"| squid
-
-  %% the floor: everything exits through squid, allowlisted only
+  onecli -->|"SaaS call (creds injected)"| squid
   squid -->|"allowlisted only"| INTERNET
-
-  %% dev dashboard reach — NOT the data plane
+  USER -.->|"SSH tunnel"| dash
   zc -.-> dash
   onecli -.-> dash
   mcp -.-> dash
 ```
+
 > The **solid** arrows are the data plane — notice they all funnel through Squid, which is the only thing bridging `assistant-net` to the internet. The **dashed** arrows are dev-only dashboard reach via `admin-net`; on a real Linux host that net is unnecessary (dashboards bind loopback).
 
 Default 3 tiers: **updates** (WhatsApp, Gmail, identity `personal`), **tasks** (Signal, Marvin, identity `tasks`), **unrestricted** (shell/file tools, no SaaS creds, sandboxed in DinD).
