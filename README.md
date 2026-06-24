@@ -69,8 +69,6 @@ $EDITOR tiers.yaml        # optional: add/remove tiers, identities, ports, tools
 ./launch-multipass.sh --local
 ```
 
-### In VM
-
 #### 4. Start the stack  · *VM, as `assistant`*
 ```bash
 multipass shell assistant     # on the Mac — you're now `ubuntu` in the VM
