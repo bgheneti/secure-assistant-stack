@@ -120,7 +120,7 @@ Navigate to http://localhost:3000 in your browser
   'clusterBorder': '#8c959f',
   'edgeLabelBackground': '#ffffff'
 }}}%%
-flowchart TD
+flowchart TB
   classDef agent    fill:#cfe3f7,stroke:#0b5cad,stroke-width:1.75px,color:#08305c
   classDef vault    fill:#e7dbf7,stroke:#6a3fbf,stroke-width:1.75px,color:#311a5e
   classDef db       fill:#cdeae0,stroke:#0f7a55,stroke-width:1.75px,color:#06382a
@@ -133,10 +133,10 @@ flowchart TD
   INTERNET(["INTERNET"]):::internet
 
   subgraph VM["Docker host VM"]
-    direction TD
+    direction TB
 
     subgraph anet["assistant-net — NO direct internet"]
-      direction TD
+      direction TB
       zc(["zeroclaw-*<br/>agent containers"]):::agent
       mcp(["mcp-*<br/>MCP gateways"]):::agent
       onecli(["onecli<br/>vault + MITM proxy"]):::vault
@@ -162,10 +162,12 @@ flowchart TD
   onecli --> onedb
   onecli -->|"SaaS call (creds injected)"| squid
   squid -->|"allowlisted only"| INTERNET
+  USER ~~~ zc
   USER -.->|"SSH tunnel"| dash
   zc -.-> dash
   onecli -.-> dash
   mcp -.-> dash
+  dash ~~~ squid
 ```
 
 > The **solid** arrows are the data plane — notice they all funnel through Squid, which is the only thing bridging `assistant-net` to the internet. The **dashed** arrows are dev-only dashboard reach via `admin-net`; on a real Linux host that net is unnecessary (dashboards bind loopback).
