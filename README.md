@@ -53,8 +53,8 @@ The whole stack comes up with one VM + one script. Steps 1–3 run on your Mac; 
 #### 1. Get the repo  · *Mac*
 
 ```bash
-git clone https://github.com/bgheneti/zeroclaw-secure-stack.git
-cd zeroclaw-secure-stack
+git clone https://github.com/bgheneti/secure-assistant-stack.git
+cd secure-assistant-stack
 ```
 
 #### 2. Configure  · *Mac*
