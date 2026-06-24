@@ -54,7 +54,7 @@ if [ "${1:-}" = "--local" ]; then
     -C "$(dirname "$0")" .
   multipass transfer "$TARBALL" "$NAME":/tmp/stack.tar.gz
   multipass exec "$NAME" -- sudo tar xzf /tmp/stack.tar.gz -C /opt/assistant-stack
-  multipass exec "$NAME" -- chown -R assistant:assistant /opt/assistant-stack
+  multipass exec "$NAME" -- sudo chown -R assistant:assistant /opt/assistant-stack
   multipass exec "$NAME" -- rm -f /tmp/stack.tar.gz
   echo "  Local repo state transferred to /opt/assistant-stack"
 fi

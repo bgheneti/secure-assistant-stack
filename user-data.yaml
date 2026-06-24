@@ -88,7 +88,7 @@ write_files:
 
       echo "== 2. Generate tier definitions from tiers.yaml =="
       export COMPOSE_FILE=docker-compose.yml:docker-compose.tiers.yml
-      scripts/generate-tiers.py
+      python3 scripts/generate-tiers.py
 
       echo "== 3. Supporting stack (waits for health) =="
       docker compose up -d --wait \
@@ -98,9 +98,10 @@ write_files:
       _i=0; _max=15
       while [ $_i -lt $_max ]; do
         if docker exec onecli test -f /app/data/gateway/ca.pem 2>/dev/null; then
-          docker exec onecli mkdir -p /data/ca
-          docker exec onecli cp /app/data/gateway/ca.pem /data/ca/ca.pem
-          docker exec onecli cp /app/data/gateway/ca.key /data/ca/ca.key
+          docker exec -u 0 onecli mkdir -p /data/ca
+          docker exec -u 0 onecli cp /app/data/gateway/ca.pem /data/ca/ca.pem
+          docker exec -u 0 onecli cp /app/data/gateway/ca.key /data/ca/ca.key
+          docker exec -u 0 onecli chown root:root /data/ca/ca.pem /data/ca/ca.key
           echo "  CA cert exported."
           break
         fi
@@ -145,9 +146,17 @@ write_files:
       fi
 
       echo "== 7. Build the tool sandbox INSIDE the dind =="
-      # base-image pull goes via dind's HTTPS_PROXY=squid -> registry must be allowlisted
+      # Build containers live on dind's nested bridge where the `squid` hostname
+      # does NOT resolve. Pass squid's assistant-net IP as BuildKit proxy build-
+      # args so apk can reach packages.wolfi.dev. Registries/CDNs must be in
+      # squid/allowlist.txt.
       if docker ps --format '{{.Names}}' | grep -q dind-unrestricted; then
-        docker exec -i dind-unrestricted docker build -t assistant-sandbox:1 - < Dockerfile.sandbox \
+        _squid_ip=$(docker inspect squid --format '{{range $k,$v := .NetworkSettings.Networks}}{{if eq $k "assistant-net"}}{{$v.IPAddress}}{{end}}{{end}}')
+        docker exec -i dind-unrestricted docker build \
+          --build-arg "HTTP_PROXY=http://$_squid_ip:3128" \
+          --build-arg "HTTPS_PROXY=http://$_squid_ip:3128" \
+          --build-arg "NO_PROXY=localhost,127.0.0.1" \
+          -t assistant-sandbox:1 - < Dockerfile.sandbox \
           && docker exec dind-unrestricted docker images | grep assistant-sandbox \
           || echo "  !! sandbox build failed — check squid allowlist has the registry + Dockerfile digest"
       else

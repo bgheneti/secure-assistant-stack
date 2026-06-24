@@ -120,7 +120,7 @@ def gen_compose(tiers):
                     "--secrets=/root/.docker/mcp/secrets.env",
                     "--transport=streaming",
                     f"--port={t['mcp_port']}",
-                    "--servers-network=assistant-net",
+                    "--block-network",
                 ],
                 "ports": [f"127.0.0.1:{t['mcp_port']}:{t['mcp_port']}"],
             }

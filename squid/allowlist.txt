@@ -22,6 +22,24 @@ serv.amazingmarvin.com
 # .openai.com
 cgr.dev
 
+# --- Sandbox image build (in-DinD) -------------------------------------------
+# Dockerfile.sandbox is built INSIDE dind-unrestricted by bring-up.sh step 7.
+# That build needs the registries/CDNs below. If you instead build in CI and
+# publish to ghcr.io (the recommended prod path — see Dockerfile.sandbox header),
+# DELETE this block and keep only `ghcr.io` for the pull.
+registry-1.docker.io                    # Docker Hub registry (dind pulls tool images)
+auth.docker.io                          # Docker Hub token auth (registry-1 needs this)
+production.cloudflare.docker.com        # Docker Hub blob CDN
+cgr.dev                                # wolfi-base image metadata
+.r2.cloudflarestorage.com              # Chainguard image blob CDN (signed URLs)
+packages.wolfi.dev                     # apk packages
+packages.cgr.dev                       # apk packages (mirror)
+registry.npmjs.org                     # pnpm@10 via npm
+raw.githubusercontent.com              # rtk install script
+github.com                             # rtk release tarball (302 redirect host)
+objects.githubusercontent.com          # rtk release blob CDN (legacy)
+release-assets.githubusercontent.com   # rtk release blob CDN (current)
+
 # --- DEFERRED (uncomment when you add Tinfoil as a fallback model provider) --
 # inference.tinfoil.sh
 # .tinfoil.sh

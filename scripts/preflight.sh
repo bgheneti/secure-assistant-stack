@@ -81,7 +81,7 @@ for gw in $(docker ps --format '{{.Names}}' | grep '^mcp-' || true); do
   echo "$env" | grep -q MCP_GATEWAY_AUTH_TOKEN && ok "$gw MCP_GATEWAY_AUTH_TOKEN" || bad "$gw missing MCP_GATEWAY_AUTH_TOKEN"
   echo "$env" | grep -q '@onecli:10255' && ok "$gw proxy auth" || bad "$gw missing proxy auth"
   cmd=$(docker inspect "$gw" --format '{{range .Config.Cmd}}{{.}} {{end}}' 2>/dev/null)
-  case "$cmd" in *--servers-network*) ok "$gw --servers-network" ;; *) bad "$gw missing --servers-network" ;; esac
+  case "$cmd" in *--block-network*) ok "$gw --block-network (tool net containment)" ;; *) warn "$gw missing --block-network (tool containers may reach the network)" ;; esac
 done
 
 # --- floor (no internet from assistant-net) ---

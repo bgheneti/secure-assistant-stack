@@ -108,7 +108,7 @@ services:
     ports:
       - "127.0.0.1:10254:10254"            # dashboard — localhost only
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 10255 && wget -qO- http://localhost:10254/api/health >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10255 && wget -qO- http://127.0.0.1:10254/api/health >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
