@@ -18,6 +18,16 @@ Three tiers ship by default: **updates** (Gmail + WhatsApp, your personal identi
 tools, sandboxed in Docker-in-Docker with no SaaS credentials). Each tier is its own 
 container with its own blast radius.
 
+## Why
+
+Simon Willison's **lethal trifecta for AI Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
+
+Most agent setups hand it all three. This stack tries to remove two of the three **by construction** — the agent has **no direct internet** (every byte goes through an allowlist) and **no raw credentials** (the vault injects per-request, scoped tokens).
+
+**Scope.** A single-user, self-hosted pilot: dev on macOS + Multipass today, aimed at a permanent Linux/ProxMox/NAS VM tomorrow. It is **not** hardened for multi-tenant or hostile use yet. Full threat model in [docs/SECURITY.md](docs/SECURITY.md).
+
+**Status:** pilot — validated on macOS + Multipass. Other platforms (Multipass-on-Linux, libvirt/VirtualBox, Docker-on-host) are untested, and Tailscale-based dashboard access is planned. See [Usage options](#usage-options-not-yet-tested).
+
 ```bash
 brew install multipass
 ./launch-multipass.sh --local && multipass shell assistant
@@ -41,17 +51,6 @@ brew install multipass
 #### [Security model](docs/SECURITY.md) · [Comparison with similar projects](docs/COMPARISON.md)
 
 ---
-
-## Why
-
-Simon Willison's **lethal trifecta for AI Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
-
-Most agent setups hand it all three. This stack tries to remove two of the three **by construction** — the agent has **no direct internet** (every byte goes through an allowlist) and **no raw credentials** (the vault injects per-request, scoped tokens).
-
-**Scope.** A single-user, self-hosted pilot: dev on macOS + Multipass today, aimed at a permanent Linux/ProxMox/NAS VM tomorrow. It is **not** hardened for multi-tenant or hostile use yet. Full threat model in [docs/SECURITY.md](docs/SECURITY.md).
-
-**Status:** pilot — validated on macOS + Multipass. Other platforms (Multipass-on-Linux, libvirt/VirtualBox, Docker-on-host) are untested, and Tailscale-based dashboard access is planned. See [Usage options](#usage-options-not-yet-tested).
-
 
 ## Usage
 
