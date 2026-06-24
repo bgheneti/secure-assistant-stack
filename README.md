@@ -48,7 +48,7 @@ Most agent setups hand it all three. This stack tries to remove two of the three
 - [PrivateMode](https://privatemode.ai) API key – LiteLLM can fall back to any less-secure OpenAI-compatible endpoint without it
 - SaaS credentials (Gmail, Marvin, etc.) – Needed only for identity-bearing tiers (updates, tasks)
 
-The whole stack comes up with one VM + one script.**Steps 1–3 run on your Mac; steps 4–6 run inside the VM as the `assistant` service account**
+The whole stack comes up with one VM + one script. Steps 1–3 run on your Mac; steps 4–6 run inside the VM as the `assistant` service account.
 
 #### 1. Get the repo  · *Mac*
 
