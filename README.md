@@ -20,6 +20,13 @@ Three tiers ship by default: **updates** (Gmail + channels (ie. whatsapp), your 
 tools, sandboxed in Docker-in-Docker with no SaaS credentials). Each tier is its own 
 container with its own blast radius.
 
+## Quick Start
+
+```bash
+brew install multipass
+./launch-multipass.sh --local && multipass shell assistant
+```
+
 ## Why
 
 Simon Willison's **lethal trifecta for Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
@@ -30,14 +37,9 @@ Most agent setups hand it all three. This stack tries to remove two of the three
 
 **Status:** pilot — validated on macOS + Multipass. Other platforms (Multipass-on-Linux, libvirt/VirtualBox, Docker-on-host) are untested, and Tailscale-based dashboard access is planned. See [Usage options](#usage-options-not-yet-tested).
 
-```bash
-brew install multipass
-./launch-multipass.sh --local && multipass shell assistant
-```
-
 ## Features
 
-- **Default-deny egress** — no host internet; every ouTDound packet is evaluated against `squid/allowlist.txt`.
+- **Default-deny egress** — no host internet; every outbound packet is evaluated against `squid/allowlist.txt`.
 - **Zero raw credentials** — OneCLI injects scoped, per-request tokens at the proxy layer; the agent only ever sees placeholders.
 - **TEE-confidential inference** — model calls route through a hardware enclave (PrivateMode), not a plain API.
 - **Tiered identities** — N agents, each with its own identity, Model Context Protocol (MCP) tools, command allowlist, and blast radius. Three ship by default: `updates`, `tasks`, `unrestricted`.
