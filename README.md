@@ -2,7 +2,7 @@
 
 ![status](https://img.shields.io/badge/status-pilot-orange) ![platform](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Multipass-blue)
 
-**A security and privacy conscious approach to running ZeroClaw in Virtual Machines**
+**A security and privacy conscious approach to running ZeroClaw using a Virtual Machine**
 > composes proven open-source building blocks under one default-deny roof. Adds a tier model and bring-up automation on top. It does **not** reinvent sandboxing or secret injection.
 >
 > | Component | Role |
