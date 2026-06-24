@@ -6,6 +6,8 @@
 > Composes proven open-source components under one default-deny roof. Adds a tiered identity 
 > model and one-command bring-up on top. Does **not** reinvent sandboxing or secret injection.
 
+> Built on [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) — a self-hosted personal LLM assistant runtime.
+
 ## What you get
 
 ZeroClaw running in an isolated VM on your own machine, reachable over WhatsApp, Telegram, 
@@ -20,7 +22,7 @@ container with its own blast radius.
 
 ## Why
 
-Simon Willison's **lethal trifecta for AI Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
+Simon Willison's **lethal trifecta for Agents** consists of: access to private data, exposure to untrusted content,  and the ability to communicate externally.
 
 Most agent setups hand it all three. This stack tries to remove two of the three **by construction** — the agent has **no direct internet** (every byte goes through an allowlist) and **no raw credentials** (the vault injects per-request, scoped tokens).
 
