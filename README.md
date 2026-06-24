@@ -127,13 +127,15 @@ flowchart TB
   classDef squid    fill:#d6d8ff,stroke:#3730a3,stroke-width:2px,color:#1e1a66,font-weight:bold
   classDef internet fill:#ffd9cc,stroke:#c2410c,stroke-width:2px,color:#6b2207,font-weight:bold
   classDef user     fill:#f0eee9,stroke:#57606a,stroke-width:1.75px,color:#1f2328
-
+  classDef channel  fill:#d6eef2,stroke:#0e7490,stroke-width:1.75px,color:#083344
+ 
+  CHAN(["📱 paired channel<br/>WhatsApp · Telegram · Matrix"]):::channel
   USER(["👤 you (Mac)"]):::user
   INTERNET(["INTERNET"]):::internet
-
+ 
   subgraph VM["Docker host VM"]
     direction TB
-
+ 
     subgraph anet["assistant-net — NO direct internet"]
       direction TB
       zc(["zeroclaw-*<br/>agent containers"]):::agent
@@ -143,16 +145,16 @@ flowchart TB
       llm(["litellm<br/>model router"]):::agent
       pm(["privatemode-proxy<br/>TEE enclave"]):::vault
     end
-
+ 
     subgraph enet["egress-net"]
       squid(["squid — default-deny allowlist<br/>THE ONLY WAY OUT"]):::squid
     end
-
+ 
     subgraph adm["admin-net — dev only"]
       dash(["dashboards<br/>127.0.0.1:10254 · 3000–3002"]):::dash
     end
   end
-
+ 
   zc -->|"model call"| llm --> pm
   pm -->|"attested inference"| squid
   zc -->|"tools"| mcp
@@ -161,13 +163,17 @@ flowchart TB
   onecli --> onedb
   onecli -->|"SaaS call (creds injected)"| squid
   squid -->|"allowlisted only"| INTERNET
+  zc -->|"channel"| squid
+  INTERNET <--> CHAN
   USER ~~~ zc
   USER -.->|"SSH tunnel"| dash
+  CHAN ~~~ zc
   zc -.-> dash
   onecli -.-> dash
   mcp -.-> dash
   dash ~~~ squid
 ```
+ 
 
 > The **solid** arrows are the data plane — notice they all funnel through Squid, which is the only thing bridging `assistant-net` to the internet. The **dashed** arrows are dev-only dashboard reach via `admin-net`; on a real Linux host that net is unnecessary (dashboards bind loopback).
 
