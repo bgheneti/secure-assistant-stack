@@ -66,29 +66,29 @@ Most agent setups hand it all three. This stack tries to remove two of the three
 
 The whole stack comes up with one VM + one script. Steps 1–3 run on your Mac; steps 4–6 run inside the VM as the `assistant` service account.
 
-#### 1. Get the repo  · *Mac*
+### 1. Clone the Repo
 
 ```bash
 git clone https://github.com/bgheneti/secure-assistant-stack.git
 cd secure-assistant-stack
 ```
 
-#### 2. Configure
+### 2. Configure
 ```bash
 cp .env.example .env      # fill in the placeholders (encryption key, API keys…)
 $EDITOR tiers.yaml        # optional: add/remove tiers, identities, ports, tools
 ```
 > the 3 default tiers work out of the box
-#### 3. Setup the VM
+### 3. Setup the VM
 ```bash
 ./launch-multipass.sh --local
 ```
 
-#### 4. Start the stack
+### 4. Start the stack
 ```bash
 multipass exec assistant -- sudo -iu assistant bash /opt/bring-up.sh
 ```
-#### 5. Verify
+### 5. Verify
 
 ```bash
 #goal: FAIL=0
@@ -98,19 +98,21 @@ multipass exec assistant -- sudo -iu assistant \
   bash -c "cd /opt/assistant-stack && docker compose exec zeroclaw-updates zeroclaw doctor"
 ```
 
-#### 6. Use your ZeroClaw Stack as an admin 🌟 
+### 6. Use your ZeroClaw Stack as an admin 🌟 
 ```bash
 multipass info assistant # to get vm-ip
 ssh -L 10254:127.0.0.1:10254 -L 3000:127.0.0.1:3000 ubuntu@<vm-ip> # add -L 300X:127.0.0.1:300X to use other tiers
 ```
 
-##### Chat with your zeroclaw agents via the dashboard
+#### A. Chat with your zeroclaw agents via the dashboard
 Navigate to http://localhost:3000 in your browser to use ZeroClaw tier 1 (updates) agents
-##### Add API credentials to your Vault (Gmail, Marvin, etc)
+
+#### B. Add API credentials to your Vault (Gmail, Marvin, etc)
 Navigate to http://localhost:10254
 > Settings → Connections: connect Gmail -> 'personal'; paste Marvin API key -> 'tasks' 
-##### Pair a Channel with your phone, after adding it in the zeroclaw dashboard
-`multipass exec assistant -- sudo -iu assistant docker exec zeroclaw-updates zeroclaw channel start`
+
+#### C. Pair a Channel with your phone, after adding it in the zeroclaw dashboard
+>`multipass exec assistant -- sudo -iu assistant docker exec zeroclaw-updates zeroclaw channel start`
 
 ## Components
 
