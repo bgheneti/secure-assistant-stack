@@ -145,6 +145,7 @@ flowchart TB
   classDef internet fill:#ffd9cc,stroke:#c2410c,stroke-width:2px,color:#6b2207,font-weight:bold
   classDef user     fill:#f0eee9,stroke:#57606a,stroke-width:1.75px,color:#1f2328
   classDef channel  fill:#d6eef2,stroke:#0e7490,stroke-width:1.75px,color:#083344
+  classDef subbox   fill:#f9f9ff
  
   CHAN(["📱 paired channel<br/>WhatsApp · Telegram · Signal · Matrix"]):::channel
   USER(["👤 you (Mac)"]):::user
@@ -171,6 +172,7 @@ flowchart TB
       dash(["dashboards<br/>127.0.0.1:10254 · 3000–3002"]):::dash
     end
   end
+  class anet,enet,adm subbox;
  
   zc -->|"model call"| llm --> pm
   pm -->|"attested inference"| squid
